@@ -132,21 +132,31 @@ def headlight_mask(
     luminance = (
         rgb[..., 0] * 30 + rgb[..., 1] * 59 + rgb[..., 2] * 11
     ) // 100
-    # The rendered lenses are neutral medium grey. The surrounding body is
-    # brighter and the bumper/grille is darker, so this remains housing-led.
-    neutral_lens = (
+    # The rendered lens reflector is almost perfectly neutral grey, while the
+    # silver paint has a visible blue channel bias. Use that material identity
+    # as the tracking anchor so a projected search can never become the lamp.
+    # This keeps the fill attached to real housing pixels frame by frame.
+    neutral_lens_core = (
         alpha
-        & (maximum - minimum <= 42)
-        & (luminance >= 62)
-        & (luminance <= 175)
+        & (maximum - minimum <= 3)
+        & (luminance >= 88)
+        & (luminance <= 166)
     )
-    evidence = Image.fromarray(neutral_lens.astype(np.uint8) * 255, "L")
-    evidence = close_mask(evidence, 7, 5)
+    housing_guard = (
+        alpha
+        & (maximum - minimum <= 14)
+        & (luminance >= 68)
+        & (luminance <= 182)
+    )
+    evidence = Image.fromarray(neutral_lens_core.astype(np.uint8) * 255, "L")
+    guard = Image.fromarray(housing_guard.astype(np.uint8) * 255, "L")
+    guard = close_mask(guard, 3, 3)
 
     result = Image.new("L", source.size, 0)
     for search in projected_lamp_searches(box, index, True, source.size):
         candidate = ImageChops.multiply(evidence, search)
-        candidate = close_mask(candidate, 5, 3)
+        candidate = close_mask(candidate, 9, 7)
+        candidate = ImageChops.multiply(candidate, guard)
         result = ImageChops.lighter(result, candidate)
     return result
 
@@ -167,14 +177,56 @@ def tail_light_mask(
         & (red >= blue + 28)
     )
     evidence = Image.fromarray(coloured_lamp.astype(np.uint8) * 255, "L")
-    evidence = close_mask(evidence, 7, 5)
 
     result = Image.new("L", source.size, 0)
     for search in projected_lamp_searches(box, index, False, source.size):
         candidate = ImageChops.multiply(evidence, search)
-        candidate = close_mask(candidate, 5, 3)
+        candidate = close_mask(candidate, 7, 7)
+        candidate = ImageChops.multiply(candidate, evidence)
         result = ImageChops.lighter(result, candidate)
     return result
+
+
+def common_object_crop(
+    frame_paths: list[Path],
+    background_threshold: int,
+    alpha_threshold: int,
+    padding: int,
+) -> tuple[int, int, int, int]:
+    """Find one shared crop so the car never jumps between animation frames."""
+
+    union_box = None
+    canvas_size = None
+    for frame_path in frame_paths:
+        with Image.open(frame_path) as source:
+            rgba = ImageOps.exif_transpose(source).convert("RGBA")
+            canvas_size = rgba.size
+            box = make_object_mask(
+                rgba,
+                background_threshold,
+                alpha_threshold,
+            ).getbbox()
+        if box is None:
+            continue
+        if union_box is None:
+            union_box = box
+        else:
+            union_box = (
+                min(union_box[0], box[0]),
+                min(union_box[1], box[1]),
+                max(union_box[2], box[2]),
+                max(union_box[3], box[3]),
+            )
+
+    if union_box is None or canvas_size is None:
+        raise RuntimeError("No Civic pixels detected in the source sequence")
+    width, height = canvas_size
+    return (
+        max(0, union_box[0] - padding),
+        max(0, union_box[1] - padding),
+        min(width, union_box[2] + padding),
+        min(height, union_box[3] + padding),
+    )
 
 
 def grayscale_white_artwork(image: Image.Image) -> Image.Image:
@@ -228,6 +280,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--edge-threshold", type=int, default=18)
     parser.add_argument("--background-threshold", type=int, default=24)
     parser.add_argument("--alpha-threshold", type=int, default=8)
+    parser.add_argument(
+        "--crop-padding",
+        type=int,
+        default=16,
+        help="Shared transparent padding around the complete rotation",
+    )
     return parser
 
 
@@ -251,6 +309,12 @@ def main() -> None:
         glow_opacity=0,
         glow_blur=0.0,
     )
+    crop_box = common_object_crop(
+        frames,
+        args.background_threshold,
+        args.alpha_threshold,
+        max(0, args.crop_padding),
+    )
 
     order = []
     tracking = ["frame\tsource\theadlight_fade\ttaillight_fade\theadlight_pixels\ttaillight_pixels"]
@@ -264,6 +328,7 @@ def main() -> None:
                 index,
                 outline_args,
             )
+        result = result.crop(crop_box)
         destination = args.output / f"frame_{index:04d}.png"
         result.save(destination, "PNG", optimize=False, compress_level=6)
         order.append(f"{destination.name}\t{source_path.name}")

@@ -1,12 +1,14 @@
 import csv
+import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from build_approved_civic_frames import (
     EXPECTED_FRAME_COUNT,
     LAMP_OPACITY,
+    common_object_crop,
     headlight_fade,
     tail_light_fade,
 )
@@ -70,6 +72,32 @@ class ApprovedFrameSetTest(unittest.TestCase):
             self.assertEqual(
                 tail_light_fade(index),
                 headlight_fade((index + half_turn) % EXPECTED_FRAME_COUNT),
+            )
+
+    def test_common_crop_uses_one_union_for_the_complete_rotation(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            frame_paths = []
+            for index, rectangle in enumerate(
+                ((10, 20, 30, 40), (50, 10, 70, 30))
+            ):
+                frame = Image.new("RGBA", (100, 60), (0, 0, 0, 0))
+                ImageDraw.Draw(frame).rectangle(
+                    rectangle,
+                    fill=(180, 180, 180, 255),
+                )
+                frame_path = root / f"frame_{index:04d}.png"
+                frame.save(frame_path, "PNG")
+                frame_paths.append(frame_path)
+
+            self.assertEqual(
+                common_object_crop(
+                    frame_paths,
+                    background_threshold=24,
+                    alpha_threshold=8,
+                    padding=5,
+                ),
+                (5, 5, 76, 46),
             )
 
 

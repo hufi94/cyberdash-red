@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
-"""Cyberdash Red Kivy dashboard v2 integration candidate.
+"""Cyberdash Red Kivy dashboard v2.
 
 The dashboard foundation remains a conversation-derived reconstruction rather
 than a byte-for-byte copy recovered from the Raspberry Pi. V2 replaces only
 the temporary Civic drawing with the approved transparent 220-frame player.
+The 640x480 design scales uniformly to the active screen without distortion.
 The audio visualizer remains explicitly simulated.
 """
+
+import os
+
+# This interface is authored as an exact 640x480 pixel canvas. Lock Kivy's
+# density multiplier so Retina/high-DPI monitors do not enlarge text twice.
+os.environ.setdefault("KIVY_METRICS_DENSITY", "1")
+os.environ.setdefault("KIVY_METRICS_FONTSCALE", "1")
 
 from kivy.config import Config
 
 Config.set("graphics", "width", "640")
 Config.set("graphics", "height", "480")
-Config.set("graphics", "resizable", "0")
-Config.set("graphics", "fullscreen", "0")
+if os.environ.get("CYBERDASH_WINDOWED") == "1":
+    Config.set("graphics", "resizable", "1")
+    Config.set("graphics", "fullscreen", "0")
+    Config.set("graphics", "borderless", "0")
+else:
+    Config.set("graphics", "resizable", "0")
+    Config.set("graphics", "fullscreen", "auto")
+    Config.set("graphics", "borderless", "1")
 Config.set("kivy", "exit_on_escape", "1")
 
 import math
@@ -22,7 +36,16 @@ from datetime import datetime
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
+from kivy.graphics import (
+    Color,
+    Line,
+    PopMatrix,
+    PushMatrix,
+    Rectangle,
+    RoundedRectangle,
+    Scale,
+    Translate,
+)
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
 from kivy.uix.floatlayout import FloatLayout
@@ -30,6 +53,7 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
 from civic_360_widget import Civic360Player, ROTATION_SECONDS
+from display_layout import DESIGN_HEIGHT, DESIGN_WIDTH, fit_design_to_window
 
 
 BACKGROUND = (0.025, 0.025, 0.03, 1)
@@ -39,6 +63,10 @@ LIGHT_GREY = (0.65, 0.65, 0.70, 1)
 DARK_GREY = (0.18, 0.18, 0.21, 1)
 RED = (0.92, 0.025, 0.045, 1)
 DARK_RED = (0.35, 0.015, 0.025, 1)
+
+# Set this as soon as the Window exists so the initial buffer is black instead
+# of briefly flashing white while the dashboard and Civic textures load.
+Window.clearcolor = BACKGROUND
 
 
 def fixed_label(
@@ -492,11 +520,47 @@ class Dashboard(FloatLayout):
             self.temperature_status_label.text = "READ ERROR"
 
 
+class ResponsiveDashboard(FloatLayout):
+    """Scale the fixed design to any display and center it on black bars."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(*BACKGROUND)
+            self.screen_background = Rectangle(pos=self.pos, size=self.size)
+            PushMatrix()
+            self.dashboard_translation = Translate(0, 0, 0)
+            self.dashboard_scale = Scale(1, 1, 1)
+        with self.canvas.after:
+            PopMatrix()
+
+        self.dashboard = Dashboard(
+            size_hint=(None, None),
+            size=(DESIGN_WIDTH, DESIGN_HEIGHT),
+            pos=(0, 0),
+        )
+        self.add_widget(self.dashboard)
+        self.bind(pos=self.update_viewport, size=self.update_viewport)
+        Clock.schedule_once(self.update_viewport, 0)
+
+    def update_viewport(self, *_):
+        self.screen_background.pos = self.pos
+        self.screen_background.size = self.size
+        scale, offset_x, offset_y = fit_design_to_window(
+            self.width,
+            self.height,
+        )
+        self.dashboard_translation.x = self.x + offset_x
+        self.dashboard_translation.y = self.y + offset_y
+        self.dashboard_scale.x = scale
+        self.dashboard_scale.y = scale
+
+
 class RacingDashboardApp(App):
     title = "Civic Racing Dashboard V2"
 
     def build(self):
-        return Dashboard()
+        return ResponsiveDashboard()
 
 
 if __name__ == "__main__":
