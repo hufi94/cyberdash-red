@@ -1,16 +1,19 @@
 # Cyberdash Red — Raspberry Pi Civic Dashboard
 
-This is the fresh Kivy dashboard package for the Raspberry Pi 5 and 640×480
-display. It includes the approved rotating Honda Civic EJ9 artwork directly in
-the repository, so the Pi does not need to convert or copy any car frames.
+This is the fresh Kivy dashboard package for the Raspberry Pi 5. Its 640×480
+design fills the Pi display and scales uniformly to larger monitors without
+distortion. It includes the approved rotating Honda Civic EJ9 artwork directly
+in the repository, so the Pi does not need to convert or copy any car frames.
 
 ## Approved Civic animation
 
 - 220 transparent PNG frames in preserved rotation order
 - sharp white outline/etch artwork with windows, wheels, grille and body detail
 - headlights and taillights filled at 70% white opacity
+- lamp fills constrained to real housing pixels in every source angle
 - smooth early fade-in and late fade-out around the visible lamp angles
 - one complete rotation every 12 seconds
+- one shared crop for all frames, preventing vertical or sideways movement
 - no red pixels and no baked-in underglow
 - no separate ground line that can drift away from the car
 
@@ -22,9 +25,11 @@ The full motion preview is available here:
 ## Files to run
 
 - `civic_360_test.py` — tests only the approved Civic animation
-- `dashboard_v2.py` — runs the full 640×480 dashboard
+- `dashboard_v2.py` — runs the responsive fullscreen dashboard
 - `sensor_test.py` — tests both BME280 sensors in the terminal
 - `civic_360_widget.py` — reusable player used by both Kivy programs
+- `start_dashboard.sh` — launches V2 without opening a Terminal window
+- `install_autostart.sh` — enables launch after the Pi desktop starts
 - `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
 - `build_approved_civic_frames.py` — optional frame rebuilding tool
 
@@ -47,8 +52,6 @@ if [ -d cyberdash_red ]; then
 fi
 
 git clone \
-    --branch agent/integrate-approved-civic-dashboard-v2 \
-    --single-branch \
     https://github.com/hufi94/cyberdash-red.git \
     cyberdash_red
 
@@ -77,8 +80,46 @@ source .venv/bin/activate
 python dashboard_v2.py
 ```
 
-Press **Esc** to close it. The existing Raspberry Pi autostart configuration is
-not changed by this repository.
+Press **Esc** to close it. V2 starts fullscreen by default, scales the original
+640×480 design uniformly, and centers it on a black background. A 1920×1080
+monitor displays a 1440×1080 dashboard with black side bars instead of a small
+640×480 window or a stretched layout.
+
+To test it in a normal resizable window instead, run:
+
+```bash
+CYBERDASH_WINDOWED=1 python dashboard_v2.py
+```
+
+## Start automatically with the Raspberry Pi
+
+Only enable this after the fullscreen dashboard has been checked manually:
+
+```bash
+cd ~/Desktop/cyberdash_red
+chmod +x start_dashboard.sh install_autostart.sh disable_autostart.sh
+./install_autostart.sh
+```
+
+The installer creates a desktop autostart entry with `Terminal=false`, so no
+Terminal window appears during normal startup. It preserves an existing
+Cyberdash Red entry before replacing it and reports possible older dashboard
+entries without changing them.
+
+Reboot to test:
+
+```bash
+sudo reboot
+```
+
+To disable this autostart safely later:
+
+```bash
+cd ~/Desktop/cyberdash_red
+./disable_autostart.sh
+```
+
+The disabled entry is renamed with a timestamp instead of being deleted.
 
 ## Test the two BME280 sensors
 
@@ -116,7 +157,8 @@ python build_approved_civic_frames.py \
     --output /path/to/new/transparent_frames \
     --preview /path/to/preview.png \
     --line-thickness 1 \
-    --edge-threshold 18
+    --edge-threshold 18 \
+    --crop-padding 16
 ```
 
 Appearance controls:
@@ -127,10 +169,15 @@ Appearance controls:
 | `--line-thickness 2` | Stronger lines for a brighter small display |
 | Lower `--edge-threshold` | More windows, grille and surface detail |
 | Higher `--edge-threshold` | Simpler artwork with less fine detail |
+| `--crop-padding 16` | Shared transparent margin without frame-to-frame movement |
 
-The approved settings are line thickness `1`, edge threshold `18`, and no red
-underglow. The builder requires the complete ordered set of 220 source frames
-and writes `frame_order.txt` plus `lamp_tracking.tsv` for verification.
+The approved settings are line thickness `1`, edge threshold `18`, crop padding
+`16`, and no red underglow. The builder requires the complete ordered set of
+220 source frames and writes `frame_order.txt` plus `lamp_tracking.tsv` for
+verification. Headlight and taillight fills are extracted from real lamp
+material in each source frame, then baked into that same transparent PNG. Kivy
+does not animate a second lamp layer, so the fills cannot move independently
+of the Civic.
 
 ## Development checks
 
