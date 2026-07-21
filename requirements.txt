@@ -1,2 +1,5 @@
 Pillow>=10.0
+numpy
 Kivy>=2.3.0
+adafruit-blinka
+adafruit-circuitpython-bme280
