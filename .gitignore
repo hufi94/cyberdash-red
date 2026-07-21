@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Source and generated image sequences can be large and car-specific.
+assets/civic_frames/
+assets/civic_frames_outline/
+assets/civic_frames_*_backup_*/
+assets/civic_outline_preview.png
+
+*.backup_*
