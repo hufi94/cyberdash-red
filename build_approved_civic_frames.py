@@ -18,8 +18,6 @@ from convert_civic_outline import (
 EXPECTED_FRAME_COUNT = 220
 # Use conventional half-up rounding: 70% of 255 is 178.5, stored as 179.
 LAMP_OPACITY = 179
-UNDERGLOW_WIDTH_RATIO = 0.70
-UNDERGLOW_SMOOTHING_RADIUS = 4
 
 
 def smoothstep(value: float) -> float:
@@ -43,51 +41,6 @@ def tail_light_fade(index: int) -> float:
     """Use the identical fade curve exactly one half-rotation later."""
 
     return headlight_fade((index + EXPECTED_FRAME_COUNT // 2) % EXPECTED_FRAME_COUNT)
-
-
-def underglow_geometry(frame: Image.Image) -> tuple[float, float, float]:
-    """Return normalized floor-glow center X, floor Y, and width."""
-
-    box = frame.getchannel("A").getbbox()
-    if box is None:
-        raise RuntimeError("No Civic pixels detected for underglow tracking")
-    left, _top, right, bottom = box
-    frame_width, frame_height = frame.size
-    center_x = (left + right) / (2.0 * frame_width)
-    floor_y = min(frame_height - 1, bottom + 1) / frame_height
-    glow_width = (
-        (right - left)
-        * UNDERGLOW_WIDTH_RATIO
-        / frame_width
-    )
-    return center_x, floor_y, glow_width
-
-
-def circular_smooth_geometry(
-    geometry: list[tuple[float, float, float]],
-    radius: int = UNDERGLOW_SMOOTHING_RADIUS,
-) -> list[tuple[float, float, float]]:
-    """Smooth frame geometry across the loop without introducing timing lag."""
-
-    if not geometry:
-        return []
-    radius = max(0, radius)
-    if radius == 0:
-        return list(geometry)
-    count = len(geometry)
-    smoothed = []
-    for index in range(count):
-        neighborhood = [
-            geometry[(index + offset) % count]
-            for offset in range(-radius, radius + 1)
-        ]
-        smoothed.append(
-            tuple(
-                sum(values) / len(neighborhood)
-                for values in zip(*neighborhood)
-            )
-        )
-    return smoothed
 
 
 def ellipse_mask(
@@ -365,7 +318,6 @@ def main() -> None:
 
     order = []
     tracking = ["frame\tsource\theadlight_fade\ttaillight_fade\theadlight_pixels\ttaillight_pixels"]
-    underglow_raw = []
     previews = []
     preview_indexes = {0, 20, 40, 55, 75, 90, 110, 135, 165, 185, 200, 219}
     for index, source_path in enumerate(frames):
@@ -377,7 +329,6 @@ def main() -> None:
                 outline_args,
             )
         result = result.crop(crop_box)
-        underglow_raw.append(underglow_geometry(result))
         destination = args.output / f"frame_{index:04d}.png"
         result.save(destination, "PNG", optimize=False, compress_level=6)
         order.append(f"{destination.name}\t{source_path.name}")
@@ -400,20 +351,6 @@ def main() -> None:
         "\n".join(tracking) + "\n",
         encoding="utf-8",
     )
-    underglow_rows = ["frame\tcenter_x\tfloor_y\twidth"]
-    for index, geometry in enumerate(
-        circular_smooth_geometry(underglow_raw)
-    ):
-        center_x, floor_y, glow_width = geometry
-        underglow_rows.append(
-            f"frame_{index:04d}.png\t"
-            f"{center_x:.6f}\t{floor_y:.6f}\t{glow_width:.6f}"
-        )
-    (args.output / "underglow_tracking.tsv").write_text(
-        "\n".join(underglow_rows) + "\n",
-        encoding="utf-8",
-    )
-
     if args.preview:
         cell_width, cell_height, columns = 427, 270, 3
         rows = math.ceil(len(previews) / columns)
