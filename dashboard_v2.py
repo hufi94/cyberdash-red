@@ -4,7 +4,8 @@
 The dashboard foundation remains a conversation-derived reconstruction rather
 than a byte-for-byte copy recovered from the Raspberry Pi. V2 replaces only
 the temporary Civic drawing with the approved transparent 220-frame player.
-The 640x480 design scales uniformly to the active screen without distortion.
+The 480-pixel-tall design adapts from 640 to 854 pixels wide before scaling,
+so common Pi and HDMI displays are filled without stretching the artwork.
 The audio visualizer remains explicitly simulated.
 """
 
@@ -53,7 +54,13 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
 from civic_360_widget import Civic360Player, ROTATION_SECONDS
-from display_layout import DESIGN_HEIGHT, DESIGN_WIDTH, fit_design_to_window
+from display_layout import (
+    DESIGN_HEIGHT,
+    DESIGN_WIDTH,
+    SAFE_SCREEN_INSET,
+    design_width_for_window,
+    fit_design_to_window,
+)
 
 
 BACKGROUND = (0.025, 0.025, 0.03, 1)
@@ -251,7 +258,8 @@ class Dashboard(FloatLayout):
     inside_temperature = NumericProperty(0.0)
     outside_temperature = NumericProperty(0.0)
 
-    def __init__(self, **kwargs):
+    def __init__(self, design_width=DESIGN_WIDTH, **kwargs):
+        self.design_width = design_width
         super().__init__(**kwargs)
         Window.clearcolor = BACKGROUND
         self.inside_sensor = None
@@ -287,12 +295,12 @@ class Dashboard(FloatLayout):
             line.points = [self.x, y, self.right, y + self.height * 0.08]
 
     def create_panels(self):
-        margin, gap, header_height = dp(12), dp(10), dp(27)
-        usable_width = 640 - margin * 2
-        usable_height = 480 - margin * 2 - header_height
+        margin, gap, header_height = dp(10), dp(8), dp(26)
+        usable_width = self.design_width - margin * 2
+        usable_height = DESIGN_HEIGHT - margin * 2 - header_height
         column_width = (usable_width - gap) / 2
         row_height = (usable_height - gap) / 2
-        top_y = 480 - margin - header_height - row_height
+        top_y = DESIGN_HEIGHT - margin - header_height - row_height
 
         self.top_left_panel = RacingPanel(
             pos=(margin, top_y), size=(column_width, row_height)
@@ -319,9 +327,9 @@ class Dashboard(FloatLayout):
         self.add_widget(
             fixed_label(
                 "[b]CIVIC // DRIVER INTERFACE[/b]",
-                (margin, 480 - margin - header_height),
-                (dp(250), header_height),
-                12,
+                (margin, DESIGN_HEIGHT - margin - header_height),
+                (dp(280), header_height),
+                13,
                 halign="left",
                 markup=True,
             )
@@ -329,22 +337,25 @@ class Dashboard(FloatLayout):
         self.add_widget(
             fixed_label(
                 "[color=ff0a16]●[/color] SYSTEM ONLINE",
-                (640 - margin - dp(170), 480 - margin - header_height),
-                (dp(170), header_height),
-                9,
+                (
+                    self.design_width - margin - dp(190),
+                    DESIGN_HEIGHT - margin - header_height,
+                ),
+                (dp(190), header_height),
+                10,
                 color=LIGHT_GREY,
                 halign="right",
                 markup=True,
             )
         )
 
-    def panel_title(self, panel, text):
+    def panel_title(self, panel, text, reserve_end=0):
         self.add_widget(
             fixed_label(
                 f"[color=ff0a16]{text}[/color]",
                 (panel.x + dp(12), panel.top - dp(39)),
-                (panel.width - dp(24), dp(22)),
-                10,
+                (panel.width - dp(24) - dp(reserve_end), dp(22)),
+                11,
                 halign="left",
                 markup=True,
             )
@@ -378,13 +389,22 @@ class Dashboard(FloatLayout):
 
     def create_temperature_panel(self):
         panel = self.top_right_panel
-        self.panel_title(panel, "CLIMATE MONITOR")
+        self.panel_title(panel, "CLIMATE MONITOR", reserve_end=125)
+        self.temperature_status_label = fixed_label(
+            "CONNECTING",
+            (panel.right - dp(132), panel.top - dp(39)),
+            (dp(120), dp(22)),
+            8,
+            color=LIGHT_GREY,
+            halign="right",
+        )
+        self.add_widget(self.temperature_status_label)
         self.add_widget(
             fixed_label(
                 "INSIDE",
                 (panel.x + dp(16), panel.y + dp(111)),
                 (dp(90), dp(24)),
-                10,
+                11,
                 color=LIGHT_GREY,
                 halign="left",
             )
@@ -411,7 +431,7 @@ class Dashboard(FloatLayout):
                 "OUTSIDE",
                 (panel.x + dp(16), panel.y + dp(51)),
                 (dp(90), dp(24)),
-                10,
+                11,
                 color=LIGHT_GREY,
                 halign="left",
             )
@@ -433,16 +453,6 @@ class Dashboard(FloatLayout):
         )
         self.add_widget(self.outside_bar)
 
-        self.temperature_status_label = fixed_label(
-            "CONNECTING",
-            (panel.right - dp(135), panel.top - dp(42)),
-            (dp(120), dp(20)),
-            8,
-            color=LIGHT_GREY,
-            halign="right",
-        )
-        self.add_widget(self.temperature_status_label)
-
     def create_vehicle_panel(self):
         panel = self.bottom_left_panel
         self.panel_title(panel, "VEHICLE PROFILE")
@@ -459,14 +469,24 @@ class Dashboard(FloatLayout):
                 "[b]HONDA CIVIC EJ9 // B16A2[/b]",
                 (panel.x + dp(15), panel.y + dp(5)),
                 (panel.width - dp(30), dp(22)),
-                9,
+                10,
                 markup=True,
             )
         )
 
     def create_visualizer_panel(self):
         panel = self.bottom_right_panel
-        self.panel_title(panel, "AUDIO VISUALIZER // SIMULATED")
+        self.panel_title(panel, "AUDIO VISUALIZER", reserve_end=90)
+        self.add_widget(
+            fixed_label(
+                "SIMULATED",
+                (panel.right - dp(92), panel.top - dp(39)),
+                (dp(80), dp(22)),
+                8,
+                color=LIGHT_GREY,
+                halign="right",
+            )
+        )
         self.add_widget(
             Visualizer(
                 bar_count=17,
@@ -521,7 +541,7 @@ class Dashboard(FloatLayout):
 
 
 class ResponsiveDashboard(FloatLayout):
-    """Scale the fixed design to any display and center it on black bars."""
+    """Adapt the dashboard width, then scale it with a small safe inset."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -534,14 +554,24 @@ class ResponsiveDashboard(FloatLayout):
         with self.canvas.after:
             PopMatrix()
 
+        self.dashboard = None
+        self.design_width = DESIGN_WIDTH
+        self.bind(pos=self.update_viewport, size=self.update_viewport)
+        Clock.schedule_once(self.build_dashboard, 0)
+
+    def build_dashboard(self, _dt):
+        self.design_width = design_width_for_window(
+            self.width,
+            self.height,
+        )
         self.dashboard = Dashboard(
+            design_width=self.design_width,
             size_hint=(None, None),
-            size=(DESIGN_WIDTH, DESIGN_HEIGHT),
+            size=(self.design_width, DESIGN_HEIGHT),
             pos=(0, 0),
         )
         self.add_widget(self.dashboard)
-        self.bind(pos=self.update_viewport, size=self.update_viewport)
-        Clock.schedule_once(self.update_viewport, 0)
+        self.update_viewport()
 
     def update_viewport(self, *_):
         self.screen_background.pos = self.pos
@@ -549,6 +579,8 @@ class ResponsiveDashboard(FloatLayout):
         scale, offset_x, offset_y = fit_design_to_window(
             self.width,
             self.height,
+            design_width=self.design_width,
+            safe_inset=SAFE_SCREEN_INSET,
         )
         self.dashboard_translation.x = self.x + offset_x
         self.dashboard_translation.y = self.y + offset_y

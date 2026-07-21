@@ -1,9 +1,9 @@
 # Cyberdash Red — Raspberry Pi Civic Dashboard
 
-This is the fresh Kivy dashboard package for the Raspberry Pi 5. Its 640×480
-design fills the Pi display and scales uniformly to larger monitors without
-distortion. It includes the approved rotating Honda Civic EJ9 artwork directly
-in the repository, so the Pi does not need to convert or copy any car frames.
+This is the fresh Kivy dashboard package for the Raspberry Pi 5. Its layout
+adapts to 640×480, 800×480 and widescreen displays without stretching the
+Civic. It includes the approved rotating Honda Civic EJ9 artwork directly in
+the repository, so the Pi does not need to convert or copy any car frames.
 
 ## Approved Civic animation
 
@@ -80,10 +80,16 @@ source .venv/bin/activate
 python dashboard_v2.py
 ```
 
-Press **Esc** to close it. V2 starts fullscreen by default, scales the original
-640×480 design uniformly, and centers it on a black background. A 1920×1080
-monitor displays a 1440×1080 dashboard with black side bars instead of a small
-640×480 window or a stretched layout.
+Press **Esc** to close it. V2 starts fullscreen by default. It keeps the layout
+480 design pixels tall and adapts its width to the detected screen:
+
+- 640×480 uses the compact four-panel layout.
+- 800×480 uses the full wide panel instead of leaving 80-pixel side bars.
+- 16:9 monitors use an 853×480 layout before uniform scaling.
+
+A six-pixel screen inset and ten-pixel panel margin keep the accents clear of
+the physical display edge. Small headings are enlarged, while the time,
+temperatures, Civic and visualizer retain their emphasis.
 
 To test it in a normal resizable window instead, run:
 

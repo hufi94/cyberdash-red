@@ -1,6 +1,6 @@
 import unittest
 
-from display_layout import fit_design_to_window
+from display_layout import design_width_for_window, fit_design_to_window
 
 
 class DisplayLayoutTest(unittest.TestCase):
@@ -21,6 +21,23 @@ class DisplayLayoutTest(unittest.TestCase):
 
     def test_uninitialized_window_uses_safe_defaults(self):
         self.assertEqual(fit_design_to_window(0, 0), (1.0, 0.0, 0.0))
+
+    def test_wide_small_display_uses_its_complete_width(self):
+        self.assertEqual(design_width_for_window(800, 480), 800)
+
+    def test_full_hd_uses_sixteen_by_nine_design_width(self):
+        self.assertEqual(design_width_for_window(1920, 1080), 853)
+
+    def test_safe_inset_leaves_a_small_edge_margin(self):
+        scale, offset_x, offset_y = fit_design_to_window(
+            800,
+            480,
+            design_width=800,
+            safe_inset=6,
+        )
+        self.assertAlmostEqual(scale, 0.975)
+        self.assertAlmostEqual(offset_x, 10.0)
+        self.assertAlmostEqual(offset_y, 6.0)
 
 
 if __name__ == "__main__":
