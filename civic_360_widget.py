@@ -59,11 +59,12 @@ class Civic360Player(FloatLayout):
             pos_hint={"x": 0, "y": 0},
             fit_mode="contain",
             mipmap=True,
+            opacity=0,
         )
         self.add_widget(self.car_image)
 
         self.status_label = Label(
-            text="LOADING CIVIC",
+            text="",
             color=(0.65, 0.65, 0.70, 1),
             font_size=dp(8),
             size_hint=(1, 1),
@@ -73,7 +74,11 @@ class Civic360Player(FloatLayout):
         self.status_label.bind(size=self.status_label.setter("text_size"))
         self.add_widget(self.status_label)
 
-        Clock.schedule_once(self.begin_loading, 0)
+        # Decode the first frame before Kivy paints the widget.  An Image with
+        # no texture is an opaque white rectangle on some Raspberry Pi video
+        # drivers, so it remains transparent until this first texture exists.
+        # The remaining frames are still loaded in small background batches.
+        self.begin_loading(0)
 
     def begin_loading(self, _dt) -> None:
         """Validate the approved frame set before decoding any textures."""
@@ -94,10 +99,30 @@ class Civic360Player(FloatLayout):
             )
             return
 
-        self.status_label.text = (
-            f"LOADING CIVIC // 0 / {EXPECTED_FRAME_COUNT}"
-        )
+        if self.reverse_rotation:
+            self.frame_paths.reverse()
+
+        try:
+            first_texture = self.load_texture(self.frame_paths[0])
+        except Exception as error:
+            self.status_label.text = "CIVIC FRAME ERROR"
+            print(f"Civic first-frame loading error: {error}")
+            return
+
+        self.textures.append(first_texture)
+        self.load_index = 1
+        self.car_image.texture = first_texture
+        self.car_image.opacity = 1
         self.load_event = Clock.schedule_interval(self.load_batch, 0)
+
+    @staticmethod
+    def load_texture(frame_path: Path):
+        """Decode one frame with the filtering used by the player."""
+
+        texture = CoreImage(str(frame_path), mipmap=True).texture
+        texture.min_filter = "linear"
+        texture.mag_filter = "linear"
+        return texture
 
     def load_batch(self, _dt) -> bool:
         """Decode a few textures per UI cycle to keep the dashboard responsive."""
@@ -105,29 +130,18 @@ class Civic360Player(FloatLayout):
         stop = min(self.load_index + LOAD_BATCH_SIZE, len(self.frame_paths))
         try:
             for index in range(self.load_index, stop):
-                texture = CoreImage(
-                    str(self.frame_paths[index]),
-                    mipmap=True,
-                ).texture
-                texture.min_filter = "linear"
-                texture.mag_filter = "linear"
-                self.textures.append(texture)
+                self.textures.append(
+                    self.load_texture(self.frame_paths[index])
+                )
         except Exception as error:
             self.status_label.text = "CIVIC FRAME ERROR"
             print(f"Civic frame loading error: {error}")
             return False
 
         self.load_index = stop
-        self.status_label.text = (
-            f"LOADING CIVIC // {self.load_index} / {EXPECTED_FRAME_COUNT}"
-        )
         if self.load_index < len(self.frame_paths):
             return True
 
-        if self.reverse_rotation:
-            self.textures.reverse()
-        self.car_image.texture = self.textures[0]
-        self.status_label.text = ""
         self.rotation_started_at = time.perf_counter()
         self.rotation_event = Clock.schedule_interval(
             self.update_rotation,
