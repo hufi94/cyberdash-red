@@ -14,6 +14,11 @@ ALPHA_THRESHOLD = 24
 GLOW_WIDTH_RATIO = 0.74
 GLOW_HEIGHT_RATIO = 0.10
 SOURCE_INSET_RATIO = 0.055
+MIN_SEQUENCE_WIDTH_RATIO = 0.36
+MAX_SEQUENCE_WIDTH_RATIO = 0.70
+GEOMETRY_SMOOTH_RADIUS = 7
+PIVOT_CORRECTION_ITERATIONS = 12
+MAX_SOURCE_SHIFT_RATIO = 0.24
 SOURCE_OPACITY = 255
 BROAD_BLUR = 11.0
 MEDIUM_BLUR = 5.0
@@ -34,7 +39,10 @@ def natural_key(path: Path) -> list[object]:
     ]
 
 
-def hidden_glow_source(frame: Image.Image) -> Image.Image:
+def hidden_glow_source(
+    frame: Image.Image,
+    geometry: tuple[float, float, float, float] | None = None,
+) -> Image.Image:
     """Place a wide light source just inside the car's lower silhouette."""
 
     box = frame.getchannel("A").getbbox()
@@ -43,10 +51,13 @@ def hidden_glow_source(frame: Image.Image) -> Image.Image:
     left, top, right, bottom = box
     car_width = right - left
     car_height = bottom - top
-    center_x = (left + right) / 2.0
-    center_y = bottom - car_height * SOURCE_INSET_RATIO
-    glow_width = car_width * GLOW_WIDTH_RATIO
-    glow_height = max(8.0, car_height * GLOW_HEIGHT_RATIO)
+    if geometry is None:
+        center_x = frame.width / 2.0
+        center_y = bottom - car_height * SOURCE_INSET_RATIO
+        glow_width = car_width * GLOW_WIDTH_RATIO
+        glow_height = max(8.0, car_height * GLOW_HEIGHT_RATIO)
+    else:
+        center_x, center_y, glow_width, glow_height = geometry
 
     source = Image.new("L", frame.size, 0)
     ImageDraw.Draw(source).ellipse(
@@ -86,11 +97,134 @@ def scaled_mask(mask: Image.Image, factor: float) -> Image.Image:
     return mask.point(lambda pixel: round(pixel * factor))
 
 
-def add_bottom_glow(frame: Image.Image) -> Image.Image:
-    """Composite a line-free downward glow behind the unchanged Civic."""
+def circular_smooth(values: list[float], radius: int) -> list[float]:
+    """Smooth a complete rotation without introducing a seam at frame zero."""
 
-    rgba = frame.convert("RGBA")
-    source = hidden_glow_source(rgba)
+    data = np.asarray(values, dtype=np.float64)
+    if data.size == 0 or radius <= 0:
+        return data.tolist()
+    weights = np.hanning(radius * 2 + 3)[1:-1]
+    weights /= weights.sum()
+    offsets = range(-radius, radius + 1)
+    return [
+        float(
+            sum(
+                data[(index + offset) % data.size] * weight
+                for offset, weight in zip(offsets, weights)
+            )
+        )
+        for index in range(data.size)
+    ]
+
+
+def sequence_glow_geometry(
+    frame_paths: list[Path],
+) -> list[tuple[float, float, float, float]]:
+    """Build one stable turntable-centered footprint for every frame."""
+
+    sizes = []
+    raw_center_y = []
+    car_heights = []
+    for frame_path in frame_paths:
+        with Image.open(frame_path) as frame:
+            width, height = frame.size
+            box = frame.convert("RGBA").getchannel("A").getbbox()
+        if box is None:
+            raise RuntimeError(f"No Civic pixels detected: {frame_path}")
+        left, top, right, bottom = box
+        sizes.append((width, height))
+        car_height = bottom - top
+        car_heights.append(car_height)
+        raw_center_y.append(bottom - car_height * SOURCE_INSET_RATIO)
+
+    if len(set(sizes)) != 1:
+        raise RuntimeError("All Civic frames must share one canvas size")
+
+    canvas_width, _canvas_height = sizes[0]
+    center_x = canvas_width / 2.0
+    center_y_values = circular_smooth(raw_center_y, GEOMETRY_SMOOTH_RADIUS)
+    glow_height = max(8.0, float(np.median(car_heights)) * GLOW_HEIGHT_RATIO)
+    minimum_width = canvas_width * MIN_SEQUENCE_WIDTH_RATIO
+    maximum_width = canvas_width * MAX_SEQUENCE_WIDTH_RATIO
+
+    result = []
+    frame_count = len(frame_paths)
+    for index, center_y in enumerate(center_y_values):
+        # Frame zero is the rear view, a side view occurs one quarter-turn
+        # later, and the front appears at half a turn. This analytic footprint
+        # changes width continuously while its turntable pivot never wanders.
+        phase = 2.0 * np.pi * index / frame_count
+        projected_length = minimum_width * float(np.cos(phase))
+        projected_side = maximum_width * float(np.sin(phase))
+        glow_width = float(np.hypot(projected_length, projected_side))
+        result.append((center_x, center_y, glow_width, glow_height))
+
+    # The solid car mask can hide more of one half of the bloom at oblique
+    # angles. Correct the hidden source position until the *visible* reflected
+    # light remains centered on the fixed turntable pivot. This eliminates the
+    # apparent sideways slide without adding a second animation layer.
+    stabilized = []
+    for frame_path, geometry in zip(frame_paths, result):
+        with Image.open(frame_path) as frame:
+            frame.load()
+            rgba = frame.convert("RGBA")
+        stabilized.append(
+            stabilize_visible_pivot(rgba, geometry, target_x=center_x)
+        )
+    return stabilized
+
+
+def visible_glow_center_x(
+    frame: Image.Image,
+    geometry: tuple[float, float, float, float],
+) -> float:
+    glow_alpha = np.asarray(glow_alpha_for_geometry(frame, geometry)).copy()
+    glow_alpha[np.asarray(frame.getchannel("A")) > 0] = 0
+    column_weights = glow_alpha.sum(axis=0, dtype=np.float64)
+    total = float(column_weights.sum())
+    if total <= 0:
+        return geometry[0]
+    x_coordinates = np.arange(frame.width, dtype=np.float64)
+    return float(np.dot(column_weights, x_coordinates) / total)
+
+
+def stabilize_visible_pivot(
+    frame: Image.Image,
+    geometry: tuple[float, float, float, float],
+    target_x: float,
+) -> tuple[float, float, float, float]:
+    _source_x, center_y, glow_width, glow_height = geometry
+    maximum_shift = glow_width * MAX_SOURCE_SHIFT_RATIO
+    lower_x = target_x - maximum_shift
+    upper_x = target_x + maximum_shift
+    lower_geometry = (lower_x, center_y, glow_width, glow_height)
+    upper_geometry = (upper_x, center_y, glow_width, glow_height)
+    lower_center = visible_glow_center_x(frame, lower_geometry)
+    upper_center = visible_glow_center_x(frame, upper_geometry)
+    if target_x <= lower_center:
+        return lower_geometry
+    if target_x >= upper_center:
+        return upper_geometry
+
+    for _iteration in range(PIVOT_CORRECTION_ITERATIONS):
+        source_x = (lower_x + upper_x) / 2.0
+        candidate = (source_x, center_y, glow_width, glow_height)
+        visible_center = visible_glow_center_x(frame, candidate)
+        if visible_center < target_x:
+            lower_x = source_x
+        else:
+            upper_x = source_x
+    source_x = (lower_x + upper_x) / 2.0
+    return (source_x, center_y, glow_width, glow_height)
+
+
+def glow_alpha_for_geometry(
+    rgba: Image.Image,
+    geometry: tuple[float, float, float, float] | None,
+) -> Image.Image:
+    """Return only the masked, contact-faded underglow opacity."""
+
+    source = hidden_glow_source(rgba, geometry)
     broad = scaled_mask(
         source.filter(ImageFilter.GaussianBlur(BROAD_BLUR)),
         BROAD_OPACITY,
@@ -128,6 +262,17 @@ def add_bottom_glow(frame: Image.Image) -> Image.Image:
         np.clip(glow_array, 0, 255).astype(np.uint8),
         "L",
     )
+    return glow_alpha
+
+
+def add_bottom_glow(
+    frame: Image.Image,
+    geometry: tuple[float, float, float, float] | None = None,
+) -> Image.Image:
+    """Composite a line-free downward glow behind the unchanged Civic."""
+
+    rgba = frame.convert("RGBA")
+    glow_alpha = glow_alpha_for_geometry(rgba, geometry)
 
     glow = Image.new("RGBA", rgba.size, (*GLOW_COLOR, 0))
     glow.putalpha(glow_alpha)
@@ -160,19 +305,30 @@ def main() -> None:
         raise SystemExit(f"Output folder is not empty: {args.output}")
     args.output.mkdir(parents=True, exist_ok=True)
 
+    geometry = sequence_glow_geometry(frames)
     order = []
+    geometry_rows = ["frame\tcenter_x\tcenter_y\twidth\theight"]
     for index, source_path in enumerate(frames):
         with Image.open(source_path) as source:
             source.load()
-            result = add_bottom_glow(source)
+            result = add_bottom_glow(source, geometry[index])
         destination = args.output / f"frame_{index:04d}.png"
         result.save(destination, "PNG", optimize=False, compress_level=6)
         order.append(f"{destination.name}\t{source_path.name}")
+        center_x, center_y, glow_width, glow_height = geometry[index]
+        geometry_rows.append(
+            f"{destination.name}\t{center_x:.3f}\t{center_y:.3f}\t"
+            f"{glow_width:.3f}\t{glow_height:.3f}"
+        )
         if index == 0 or (index + 1) % 20 == 0 or index + 1 == len(frames):
             print(f"[{index + 1:03d}/{len(frames):03d}] {destination.name}")
 
     (args.output / "frame_order.txt").write_text(
         "\n".join(order) + "\n",
+        encoding="utf-8",
+    )
+    (args.output / "glow_geometry.tsv").write_text(
+        "\n".join(geometry_rows) + "\n",
         encoding="utf-8",
     )
     print(f"Created {len(frames)} frame-locked bottom-glow images.")
