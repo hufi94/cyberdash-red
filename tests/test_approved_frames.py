@@ -19,6 +19,7 @@ from build_approved_civic_frames import (
 PROJECT = Path(__file__).resolve().parents[1]
 FRAMES = PROJECT / "assets" / "civic_frames_outline"
 GLOW_FRAMES = PROJECT / "assets" / "civic_frames_bottom_glow"
+GLOW_GEOMETRY = GLOW_FRAMES / "glow_geometry.tsv"
 
 
 class ApprovedFrameSetTest(unittest.TestCase):
@@ -114,6 +115,7 @@ class BottomGlowFrameSetTest(unittest.TestCase):
             [path.name for path in source_paths],
         )
 
+        visible_glow_centers = []
         for source_path, glow_path in zip(source_paths, glow_paths):
             with Image.open(source_path) as source_image:
                 source = np.asarray(source_image.convert("RGBA"))
@@ -132,19 +134,51 @@ class BottomGlowFrameSetTest(unittest.TestCase):
             )
             self.assertGreater(int(np.count_nonzero(red_pixels)), 0)
 
-            added_alpha = glow[..., 3].astype(np.int16) - source[..., 3].astype(
-                np.int16
+            added_alpha_plane = (
+                glow[..., 3].astype(np.int16)
+                - source[..., 3].astype(np.int16)
             )
-            added_alpha = added_alpha[added_alpha > 0]
+            added_alpha = added_alpha_plane[added_alpha_plane > 0]
             self.assertGreater(int(added_alpha.max()), 80)
             self.assertLess(int(added_alpha.max()), 240)
             self.assertGreater(len(np.unique(added_alpha)), 40)
+
+            column_weights = np.clip(added_alpha_plane, 0, None).sum(axis=0)
+            x_coordinates = np.arange(column_weights.size)
+            visible_glow_centers.append(
+                float(np.dot(column_weights, x_coordinates) / column_weights.sum())
+            )
 
             alpha_box = Image.fromarray(source[..., 3], "L").getbbox()
             self.assertIsNotNone(alpha_box)
             _left, top, _right, bottom = alpha_box
             first_red_y = int(np.flatnonzero(red_pixels)[0] // red_pixels.shape[1])
             self.assertGreater(first_red_y, top + (bottom - top) * 0.48)
+
+        self.assertLess(
+            max(visible_glow_centers) - min(visible_glow_centers),
+            4.0,
+        )
+
+    def test_glow_geometry_has_one_smooth_complete_rotation(self):
+        with GLOW_GEOMETRY.open(encoding="utf-8", newline="") as geometry_file:
+            rows = list(csv.DictReader(geometry_file, delimiter="\t"))
+
+        self.assertEqual(len(rows), EXPECTED_FRAME_COUNT)
+        self.assertEqual(rows[0]["frame"], "frame_0000.png")
+        self.assertEqual(rows[-1]["frame"], "frame_0219.png")
+
+        center_y = [float(row["center_y"]) for row in rows]
+        widths = [float(row["width"]) for row in rows]
+
+        def largest_loop_step(values):
+            return max(
+                abs(values[(index + 1) % len(values)] - values[index])
+                for index in range(len(values))
+            )
+
+        self.assertLess(largest_loop_step(center_y), 1.2)
+        self.assertLess(largest_loop_step(widths), 6.0)
 
     def test_generator_keeps_original_pixels_exact(self):
         source = Image.new("RGBA", (100, 60), (0, 0, 0, 0))
