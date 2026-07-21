@@ -145,11 +145,17 @@ The default rotation speed is defined near the top of `civic_360_widget.py`:
 
 ```python
 ROTATION_SECONDS = 12.0
+FADE_IN_SECONDS = 1.5
 ```
 
 A larger number rotates more slowly. The player uses elapsed time rather than
 blindly advancing one frame per timer event, so temporary Pi workload cannot
 permanently speed up or slow down the rotation.
+
+The Civic remains completely hidden while its 220 frames load. Once the full
+set is ready, rotation begins immediately while the vehicle fades in over
+`FADE_IN_SECONDS`. Increase that value for a slower reveal, or set it to `0`
+to show the rotating Civic immediately.
 
 ## Optional: rebuild the transparent frames
 

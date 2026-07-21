@@ -14,6 +14,7 @@ from kivy.uix.label import Label
 
 
 ROTATION_SECONDS = 12.0
+FADE_IN_SECONDS = 1.5
 EXPECTED_FRAME_COUNT = 220
 LOAD_BATCH_SIZE = 8
 FRAME_DIRECTORY = (
@@ -39,12 +40,14 @@ class Civic360Player(FloatLayout):
         self,
         frames_dir: Path | None = None,
         rotation_seconds: float = ROTATION_SECONDS,
+        fade_in_seconds: float = FADE_IN_SECONDS,
         reverse_rotation: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.frames_dir = Path(frames_dir) if frames_dir else FRAME_DIRECTORY
         self.rotation_seconds = rotation_seconds
+        self.fade_in_seconds = max(0.0, fade_in_seconds)
         self.reverse_rotation = reverse_rotation
         self.frame_paths: list[Path] = []
         self.textures = []
@@ -74,10 +77,9 @@ class Civic360Player(FloatLayout):
         self.status_label.bind(size=self.status_label.setter("text_size"))
         self.add_widget(self.status_label)
 
-        # Decode the first frame before Kivy paints the widget.  An Image with
-        # no texture is an opaque white rectangle on some Raspberry Pi video
-        # drivers, so it remains transparent until this first texture exists.
-        # The remaining frames are still loaded in small background batches.
+        # Decode the first frame before Kivy paints the widget. The Image stays
+        # transparent until every frame is ready, avoiding both the driver's
+        # empty white texture and a stationary Civic during background loading.
         self.begin_loading(0)
 
     def begin_loading(self, _dt) -> None:
@@ -112,7 +114,6 @@ class Civic360Player(FloatLayout):
         self.textures.append(first_texture)
         self.load_index = 1
         self.car_image.texture = first_texture
-        self.car_image.opacity = 1
         self.load_event = Clock.schedule_interval(self.load_batch, 0)
 
     @staticmethod
@@ -150,11 +151,23 @@ class Civic360Player(FloatLayout):
         return False
 
     def update_rotation(self, _dt) -> None:
-        """Use elapsed time so the Civic cannot speed up or slow down."""
+        """Rotate at a fixed speed while smoothly revealing the loaded Civic."""
 
         if not self.textures or self.rotation_started_at is None:
             return
         elapsed = time.perf_counter() - self.rotation_started_at
+
+        if self.fade_in_seconds == 0:
+            self.car_image.opacity = 1
+        else:
+            fade_progress = min(1.0, elapsed / self.fade_in_seconds)
+            # Smoothstep gives a soft start and finish without pausing rotation.
+            self.car_image.opacity = (
+                fade_progress
+                * fade_progress
+                * (3.0 - 2.0 * fade_progress)
+            )
+
         progress = (elapsed % self.rotation_seconds) / self.rotation_seconds
         index = int(progress * len(self.textures)) % len(self.textures)
         if index == self.frame_index:
