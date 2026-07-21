@@ -132,6 +132,14 @@ class BottomGlowFrameSetTest(unittest.TestCase):
             )
             self.assertGreater(int(np.count_nonzero(red_pixels)), 0)
 
+            added_alpha = glow[..., 3].astype(np.int16) - source[..., 3].astype(
+                np.int16
+            )
+            added_alpha = added_alpha[added_alpha > 0]
+            self.assertGreater(int(added_alpha.max()), 80)
+            self.assertLess(int(added_alpha.max()), 240)
+            self.assertGreater(len(np.unique(added_alpha)), 40)
+
             alpha_box = Image.fromarray(source[..., 3], "L").getbbox()
             self.assertIsNotNone(alpha_box)
             _left, top, _right, bottom = alpha_box
