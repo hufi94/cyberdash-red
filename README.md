@@ -1,222 +1,148 @@
-# Cyberdash Red — Civic Outline Converter
+# Cyberdash Red — Raspberry Pi Civic Dashboard
 
-This project converts an existing ordered set of rotating silver Civic images into transparent white outline/etch frames for a Raspberry Pi dashboard. It can add a soft red underglow, preserves the 360-degree frame order, creates a six-angle preview, and includes a Kivy viewer that reads the processed frames directly.
+This is the fresh Kivy dashboard package for the Raspberry Pi 5 and 640×480
+display. It includes the approved rotating Honda Civic EJ9 artwork directly in
+the repository, so the Pi does not need to convert or copy any car frames.
 
-The original silver frames are never modified.
+## Approved Civic animation
 
-## Project layout
+- 220 transparent PNG frames in preserved rotation order
+- sharp white outline/etch artwork with windows, wheels, grille and body detail
+- headlights and taillights filled at 70% white opacity
+- smooth early fade-in and late fade-out around the visible lamp angles
+- one complete rotation every 12 seconds
+- no red pixels and no baked-in underglow
+- no separate ground line that can drift away from the car
 
-```text
-cyberdash-red/
-├── convert_civic_outline.py
-├── civic_360_viewer.py
-├── requirements.txt
-├── assets/
-│   ├── civic_frames/          # Original silver frames (not committed)
-│   └── civic_frames_outline/  # Generated transparent frames (not committed)
-└── tests/
-```
+![Approved Civic rotation angles](preview/approved_civic_contact.png)
 
-## 1. Install on the Raspberry Pi
+The full motion preview is available here:
+[approved 12-second rotation](preview/approved_civic_rotation_12s.mp4).
+
+## Files to run
+
+- `civic_360_test.py` — tests only the approved Civic animation
+- `dashboard_v2.py` — runs the full 640×480 dashboard
+- `sensor_test.py` — tests both BME280 sensors in the terminal
+- `civic_360_widget.py` — reusable player used by both Kivy programs
+- `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
+- `build_approved_civic_frames.py` — optional frame rebuilding tool
+
+`dashboard_v2.py` reads the inside BME280 at `0x77` and the outside BME280 at
+`0x76`. Sensor connection errors are shown on screen without stopping the
+dashboard. The audio visualizer is still a simulated placeholder.
+
+## Install safely on the Raspberry Pi
+
+These commands preserve the current dashboard as a timestamped backup, then
+install this version in a fresh `~/Desktop/cyberdash_red` folder.
 
 ```bash
 cd ~/Desktop
-git clone https://github.com/hufi94/cyberdash-red.git cyberdash_red
-cd ~/Desktop/cyberdash_red
 
+backup_stamp=$(date +%Y%m%d_%H%M%S)
+
+if [ -d cyberdash_red ]; then
+    mv cyberdash_red "cyberdash_red_backup_${backup_stamp}"
+fi
+
+git clone \
+    --branch agent/integrate-approved-civic-dashboard-v2 \
+    --single-branch \
+    https://github.com/hufi94/cyberdash-red.git \
+    cyberdash_red
+
+cd ~/Desktop/cyberdash_red
 python3 -m venv .venv --system-site-packages
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-If Kivy is already installed in the dashboard environment, the last command simply confirms the required versions.
-
-## 2. Add the existing silver frames
-
-```bash
-cd ~/Desktop/cyberdash_red
-mkdir -p assets/civic_frames
-```
-
-Copy the working rotating images into:
-
-```text
-~/Desktop/cyberdash_red/assets/civic_frames
-```
-
-The converter naturally sorts the filenames, so `frame_2.png` comes before `frame_10.png`.
-
-## 3. Back up the source and viewer
-
-```bash
-cd ~/Desktop/cyberdash_red
-
-backup_stamp=$(date +%Y%m%d_%H%M%S)
-
-cp -a assets/civic_frames \
-"assets/civic_frames_silver_backup_${backup_stamp}"
-
-if [ -f civic_360_test.py ]; then
-    cp -a civic_360_test.py \
-    "civic_360_test.py.backup_${backup_stamp}"
-fi
-
-if [ -d assets/civic_frames_outline ]; then
-    mv assets/civic_frames_outline \
-    "assets/civic_frames_outline_backup_${backup_stamp}"
-fi
-```
-
-## 4. Create a six-angle preview
-
-Start with the recommended 640×480 dashboard settings:
+## Preview the Civic first
 
 ```bash
 cd ~/Desktop/cyberdash_red
 source .venv/bin/activate
-
-python convert_civic_outline.py preview \
-    --line-thickness 2 \
-    --edge-threshold 28 \
-    --background-threshold 24 \
-    --alpha-threshold 8 \
-    --underglow on \
-    --glow-opacity 135 \
-    --glow-blur 12
+python civic_360_test.py
 ```
 
-Open the result:
+Press **Esc** to close the preview.
 
-```bash
-xdg-open ~/Desktop/cyberdash_red/assets/civic_outline_preview.png
-```
-
-The preview uses a dark background so the white lines are visible. The individual animation frames remain transparent.
-
-## Appearance settings
-
-| Setting | Result |
-| --- | --- |
-| `--line-thickness 1` | Thin technical outline |
-| `--line-thickness 2` | Recommended for a 640×480 display |
-| `--line-thickness 3` | Stronger racing-style outline |
-| Lower `--edge-threshold` | More windows, wheels, reflections, and body detail |
-| Higher `--edge-threshold` | Cleaner image with less surface noise |
-| Higher `--background-threshold` | Removes more opaque background and shadow noise |
-| Higher `--alpha-threshold` | Removes faint transparent halos |
-| `--underglow off` | White etch only |
-| Higher `--glow-opacity` | Brighter red glow |
-| Higher `--glow-blur` | Softer, wider glow |
-
-More detail:
-
-```bash
-python convert_civic_outline.py preview \
-    --line-thickness 2 \
-    --edge-threshold 18 \
-    --background-threshold 24 \
-    --underglow on
-```
-
-Cleaner and simpler:
-
-```bash
-python convert_civic_outline.py preview \
-    --line-thickness 2 \
-    --edge-threshold 42 \
-    --background-threshold 32 \
-    --underglow on
-```
-
-## 5. Convert the complete rotation
-
-Use the same settings that looked best in the preview:
-
-```bash
-python convert_civic_outline.py all \
-    --line-thickness 2 \
-    --edge-threshold 28 \
-    --background-threshold 24 \
-    --alpha-threshold 8 \
-    --underglow on \
-    --glow-opacity 135 \
-    --glow-blur 12
-```
-
-The output is written to:
-
-```text
-assets/civic_frames_outline/frame_0000.png
-assets/civic_frames_outline/frame_0001.png
-assets/civic_frames_outline/frame_0002.png
-...
-```
-
-`frame_order.txt` records the exact original-to-generated filename mapping. The converter refuses to overwrite a non-empty output directory; rename that directory before trying different settings.
-
-Verify the frame count:
-
-```bash
-find assets/civic_frames_outline \
-    -maxdepth 1 -type f -name 'frame_*.png' | wc -l
-```
-
-## 6. Run the outline viewer
-
-The included Kivy viewer already points to `assets/civic_frames_outline`:
+## Run the full dashboard
 
 ```bash
 cd ~/Desktop/cyberdash_red
 source .venv/bin/activate
-python civic_360_viewer.py
+python dashboard_v2.py
 ```
 
-Press **Esc** to close it.
+Press **Esc** to close it. The existing Raspberry Pi autostart configuration is
+not changed by this repository.
 
-Change these values near the bottom of `civic_360_viewer.py` if desired:
+## Test the two BME280 sensors
+
+```bash
+cd ~/Desktop/cyberdash_red
+source .venv/bin/activate
+i2cdetect -y 1
+python sensor_test.py
+```
+
+The I²C scan should show both `76` and `77`. Stop the terminal sensor test with
+**Ctrl+C**.
+
+## Civic player settings
+
+The default rotation speed is defined near the top of `civic_360_widget.py`:
 
 ```python
-rotation_seconds=7.0
-reverse_rotation=False
+ROTATION_SECONDS = 12.0
 ```
 
-## Updating an older viewer
+A larger number rotates more slowly. The player uses elapsed time rather than
+blindly advancing one frame per timer event, so temporary Pi workload cannot
+permanently speed up or slow down the rotation.
 
-If the dashboard still uses `civic_360_test.py`, back it up and switch only its frame-folder setting:
+## Optional: rebuild the transparent frames
+
+The approved frames are already included. Rebuilding is only necessary if the
+source renders change. Keep the original silver frames outside the output
+folder, then run:
 
 ```bash
-cd ~/Desktop/cyberdash_red
-
-python - <<'PY'
-from pathlib import Path
-
-viewer = Path("civic_360_test.py")
-code = viewer.read_text(encoding="utf-8")
-
-old = '/ "civic_frames"'
-new = '/ "civic_frames_outline"'
-
-if new in code:
-    print("Viewer already uses the outline frames.")
-elif old not in code:
-    raise SystemExit("Could not find the old Civic frame-folder setting.")
-else:
-    viewer.write_text(code.replace(old, new, 1), encoding="utf-8")
-    print("Viewer now uses assets/civic_frames_outline.")
-PY
+python build_approved_civic_frames.py \
+    --source /path/to/original/silver_frames \
+    --output /path/to/new/transparent_frames \
+    --preview /path/to/preview.png \
+    --line-thickness 1 \
+    --edge-threshold 18
 ```
 
-Then confirm the path:
+Appearance controls:
 
-```bash
-grep -n "civic_frames" civic_360_test.py
-```
+| Setting | Effect |
+| --- | --- |
+| `--line-thickness 1` | Approved thin, sharp technical lines |
+| `--line-thickness 2` | Stronger lines for a brighter small display |
+| Lower `--edge-threshold` | More windows, grille and surface detail |
+| Higher `--edge-threshold` | Simpler artwork with less fine detail |
 
-## Development test
+The approved settings are line thickness `1`, edge threshold `18`, and no red
+underglow. The builder requires the complete ordered set of 220 source frames
+and writes `frame_order.txt` plus `lamp_tracking.tsv` for verification.
 
-The tests generate temporary synthetic car frames and confirm that source images are preserved, output images are transparent RGBA, and natural animation order is retained.
+## Development checks
 
 ```bash
 python -m unittest discover -s tests -v
+python -m py_compile \
+    build_approved_civic_frames.py \
+    civic_360_widget.py \
+    civic_360_test.py \
+    dashboard_v2.py \
+    sensor_test.py
 ```
+
+The source silver frames are not committed. The approved transparent output is
+committed under `assets/civic_frames_outline` so a fresh Pi clone is complete.

@@ -1,0 +1,77 @@
+import csv
+import unittest
+from pathlib import Path
+
+from PIL import Image, ImageChops
+
+from build_approved_civic_frames import (
+    EXPECTED_FRAME_COUNT,
+    LAMP_OPACITY,
+    headlight_fade,
+    tail_light_fade,
+)
+
+
+PROJECT = Path(__file__).resolve().parents[1]
+FRAMES = PROJECT / "assets" / "civic_frames_outline"
+
+
+class ApprovedFrameSetTest(unittest.TestCase):
+    def test_complete_ordered_transparent_grayscale_sequence(self):
+        frame_paths = sorted(FRAMES.glob("frame_*.png"))
+        self.assertEqual(len(frame_paths), EXPECTED_FRAME_COUNT)
+        self.assertEqual(
+            [path.name for path in frame_paths],
+            [f"frame_{index:04d}.png" for index in range(EXPECTED_FRAME_COUNT)],
+        )
+
+        expected_size = None
+        for frame_path in frame_paths:
+            with Image.open(frame_path) as frame:
+                self.assertEqual(frame.mode, "RGBA")
+                if expected_size is None:
+                    expected_size = frame.size
+                self.assertEqual(frame.size, expected_size)
+
+                alpha_min, alpha_max = frame.getchannel("A").getextrema()
+                self.assertEqual(alpha_min, 0)
+                self.assertGreater(alpha_max, 0)
+
+                rgb = frame.convert("RGB")
+                red, green, blue = rgb.split()
+                self.assertIsNone(ImageChops.difference(red, green).getbbox())
+                self.assertIsNone(ImageChops.difference(green, blue).getbbox())
+
+    def test_order_and_tracking_metadata_cover_every_frame(self):
+        order_lines = (FRAMES / "frame_order.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertEqual(len(order_lines), EXPECTED_FRAME_COUNT)
+        self.assertTrue(order_lines[0].startswith("frame_0000.png\t"))
+        self.assertTrue(order_lines[-1].startswith("frame_0219.png\t"))
+
+        with (FRAMES / "lamp_tracking.tsv").open(
+            encoding="utf-8", newline=""
+        ) as tracking_file:
+            rows = list(csv.DictReader(tracking_file, delimiter="\t"))
+        self.assertEqual(len(rows), EXPECTED_FRAME_COUNT)
+        self.assertEqual(rows[0]["frame"], "frame_0000.png")
+        self.assertEqual(rows[-1]["frame"], "frame_0219.png")
+
+    def test_lamp_fades_are_symmetric_and_limited_to_seventy_percent(self):
+        self.assertEqual(LAMP_OPACITY, 179)
+        self.assertEqual(headlight_fade(25), 0.0)
+        self.assertEqual(headlight_fade(75), 1.0)
+        self.assertEqual(headlight_fade(135), 1.0)
+        self.assertEqual(headlight_fade(185), 0.0)
+
+        half_turn = EXPECTED_FRAME_COUNT // 2
+        for index in range(EXPECTED_FRAME_COUNT):
+            self.assertEqual(
+                tail_light_fade(index),
+                headlight_fade((index + half_turn) % EXPECTED_FRAME_COUNT),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
