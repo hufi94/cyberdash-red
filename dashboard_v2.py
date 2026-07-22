@@ -40,6 +40,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import (
     Color,
+    Ellipse,
     Line,
     Mesh,
     PopMatrix,
@@ -163,35 +164,66 @@ class RacingPanel(Widget):
         ]
 
 
-class ClimateDialIcon(Widget):
-    """Clean red climate dial used by both temperature rows."""
+class ThermometerGaugeIcon(Widget):
+    """Rounded white/red thermometer with three scale marks."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         with self.canvas:
+            Color(*WHITE)
+            self.outer_bulb = Line(circle=(0, 0, 1), width=2.0)
+            self.outer_stem = Line(
+                rounded_rectangle=(0, 0, 1, 1, 1),
+                width=2.0,
+            )
+            self.scale_marks = [Line(points=[], width=1.8) for _ in range(3)]
             Color(*RED)
-            self.outer_ring = Line(circle=(0, 0, 1), width=1.5)
-            self.inner_ring = Line(circle=(0, 0, 1), width=1.5)
-            self.rays = [Line(points=[], width=1.4) for _ in range(4)]
+            self.mercury = RoundedRectangle(
+                pos=self.pos,
+                size=(0, 0),
+                radius=[dp(2)],
+            )
+            self.mercury_bulb = Ellipse(pos=self.pos, size=(0, 0))
         self.bind(pos=self.update_canvas, size=self.update_canvas)
         self.update_canvas()
 
     def update_canvas(self, *_):
         center_x = self.center_x
-        center_y = self.center_y
-        radius = min(dp(8), self.width * 0.27, self.height * 0.22)
-        self.outer_ring.circle = (center_x, center_y, radius)
-        self.inner_ring.circle = (center_x, center_y, radius * 0.28)
-        for index, ray in enumerate(self.rays):
-            angle = math.radians(index * 90)
-            start_radius = radius * 1.28
-            end_radius = radius * 1.72
-            ray.points = [
-                center_x + math.cos(angle) * start_radius,
-                center_y + math.sin(angle) * start_radius,
-                center_x + math.cos(angle) * end_radius,
-                center_y + math.sin(angle) * end_radius,
-            ]
+        bulb_y = self.y + dp(10)
+        outer_radius = min(dp(9), self.height * 0.22)
+        stem_width = dp(10)
+        stem_top = self.top - dp(2)
+        stem_height = max(dp(10), stem_top - bulb_y)
+
+        self.outer_bulb.circle = (center_x, bulb_y, outer_radius)
+        self.outer_stem.rounded_rectangle = (
+            center_x - stem_width / 2,
+            bulb_y,
+            stem_width,
+            stem_height,
+            stem_width / 2,
+        )
+
+        mark_start = center_x + outer_radius + dp(4)
+        mark_end = min(self.right - dp(1), mark_start + dp(8))
+        for index, mark in enumerate(self.scale_marks):
+            mark_y = stem_top - dp(7) - index * dp(9)
+            short_end = mark_end - (dp(2) if index == 1 else 0)
+            mark.points = [mark_start, mark_y, short_end, mark_y]
+
+        mercury_width = dp(4)
+        mercury_top = stem_top - dp(6)
+        self.mercury.pos = (center_x - mercury_width / 2, bulb_y)
+        self.mercury.size = (
+            mercury_width,
+            max(dp(6), mercury_top - bulb_y),
+        )
+        red_radius = outer_radius * 0.62
+        self.mercury_bulb.pos = (
+            center_x - red_radius,
+            bulb_y - red_radius,
+        )
+        self.mercury_bulb.size = (red_radius * 2, red_radius * 2)
 
 
 class SegmentedTemperatureBar(Widget):
@@ -658,20 +690,20 @@ class Dashboard(FloatLayout):
             halign="right",
         )
         self.add_widget(self.temperature_status_label)
-        icon_width = dp(30 if self.compact_mode else 28)
-        icon_height = dp(42 if self.compact_mode else 38)
-        icon_x = panel.x + dp(12 if self.compact_mode else 14)
+        icon_width = dp(38 if self.compact_mode else 34)
+        icon_height = dp(44 if self.compact_mode else 40)
+        icon_x = panel.x + dp(10 if self.compact_mode else 12)
         self.add_widget(
-            ClimateDialIcon(
+            ThermometerGaugeIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
-                pos=(icon_x, panel.y + dp(98 if self.compact_mode else 100)),
+                pos=(icon_x, panel.y + dp(96 if self.compact_mode else 99)),
             )
         )
         self.add_widget(
             fixed_label(
                 "INSIDE",
-                (panel.x + dp(48), panel.y + dp(111)),
+                (panel.x + dp(53), panel.y + dp(111)),
                 (dp(90), dp(24)),
                 self.font_size(14),
                 color=LIGHT_GREY,
@@ -686,7 +718,7 @@ class Dashboard(FloatLayout):
             halign="right",
         )
         self.add_widget(self.inside_value_label)
-        bar_left = dp(46 if self.compact_mode else 52)
+        bar_left = dp(52 if self.compact_mode else 55)
         bar_right = dp(12 if self.compact_mode else 18)
         self.inside_bar = SegmentedTemperatureBar(
             minimum=-20,
@@ -699,16 +731,16 @@ class Dashboard(FloatLayout):
         self.add_widget(self.inside_bar)
 
         self.add_widget(
-            ClimateDialIcon(
+            ThermometerGaugeIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
-                pos=(icon_x, panel.y + dp(38 if self.compact_mode else 40)),
+                pos=(icon_x, panel.y + dp(36 if self.compact_mode else 39)),
             )
         )
         self.add_widget(
             fixed_label(
                 "OUTSIDE",
-                (panel.x + dp(48), panel.y + dp(51)),
+                (panel.x + dp(53), panel.y + dp(51)),
                 (dp(90), dp(24)),
                 self.font_size(14),
                 color=LIGHT_GREY,

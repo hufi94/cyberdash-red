@@ -10,8 +10,8 @@ any car frames.
 
 - clipped-corner four-panel frame with restrained red racing accents
 - large time and date module with a technical divider
-- inside/outside climate rows with clean climate-dial icons and red segmented
-  gauges
+- inside/outside climate rows with rounded white/red thermometer icons and red
+  segmented gauges
 - rotating Civic module labelled `HONDA CIVIC EG9 // B16A2` with `360 LIVE`
 - simulated segmented audio spectrum with solid red baseline segments that
   progress through coral and pale red to white at full height
