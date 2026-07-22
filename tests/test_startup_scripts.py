@@ -37,29 +37,32 @@ class StartupScriptTests(unittest.TestCase):
         disabler = (PROJECT / "disable_kiosk_startup.sh").read_text(
             encoding="utf-8"
         )
-        self.assertIn("original-labwc-autostart", installer)
+        self.assertIn("original-session-autostart", installer)
         self.assertIn("normal-autostart.desktop", installer)
-        self.assertIn("original-labwc-autostart", disabler)
+        self.assertIn("original-session-autostart", disabler)
         self.assertIn("normal-autostart.desktop", disabler)
+        self.assertIn("pgrep -x openbox", installer)
+        self.assertIn("lxsession/${lxde_profile}/autostart", installer)
 
-    def test_kiosk_install_and_disable_restore_the_original_session(self):
+    def _assert_kiosk_round_trip(self, session_kind, auto_detect=False):
         with tempfile.TemporaryDirectory() as temporary_home:
             home = Path(temporary_home)
-            fake_bin = home / "bin"
-            labwc_dir = home / ".config" / "labwc"
+            config_home = home / ".config"
             desktop_dir = home / ".config" / "autostart"
-            fake_bin.mkdir()
-            labwc_dir.mkdir(parents=True)
             desktop_dir.mkdir(parents=True)
 
-            fake_labwc = fake_bin / "labwc"
-            fake_labwc.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            fake_labwc.chmod(0o700)
+            if session_kind == "labwc":
+                session_autostart = config_home / "labwc" / "autostart"
+            else:
+                session_autostart = (
+                    config_home / "lxsession" / "LXDE-pi" / "autostart"
+                )
+            session_autostart.parent.mkdir(parents=True)
 
-            original_labwc = "#!/bin/sh\noriginal-desktop &\n"
+            original_session = "original-desktop\n"
             original_desktop_entry = "[Desktop Entry]\nName=Original\n"
-            (labwc_dir / "autostart").write_text(
-                original_labwc,
+            session_autostart.write_text(
+                original_session,
                 encoding="utf-8",
             )
             (desktop_dir / "cyberdash-red.desktop").write_text(
@@ -69,8 +72,13 @@ class StartupScriptTests(unittest.TestCase):
 
             environment = os.environ.copy()
             environment["HOME"] = str(home)
-            environment["XDG_CONFIG_HOME"] = str(home / ".config")
-            environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+            environment["XDG_CONFIG_HOME"] = str(config_home)
+            if auto_detect:
+                environment.pop("CYBERDASH_SESSION_KIND", None)
+                environment["XDG_CURRENT_DESKTOP"] = "LXDE"
+            else:
+                environment["CYBERDASH_SESSION_KIND"] = session_kind
+            environment["CYBERDASH_LXDE_PROFILE"] = "LXDE-pi"
 
             subprocess.run(
                 [str(PROJECT / "install_kiosk_startup.sh")],
@@ -80,10 +88,17 @@ class StartupScriptTests(unittest.TestCase):
                 env=environment,
             )
 
-            generated = (labwc_dir / "autostart").read_text(encoding="utf-8")
-            self.assertIn("CYBERDASH_START_DELAY=0", generated)
+            generated = session_autostart.read_text(encoding="utf-8")
+            self.assertIn("run-dashboard-session.sh", generated)
             self.assertNotIn("original-desktop", generated)
             self.assertFalse((desktop_dir / "cyberdash-red.desktop").exists())
+
+            runner = (
+                config_home
+                / "cyberdash-red-kiosk"
+                / "run-dashboard-session.sh"
+            ).read_text(encoding="utf-8")
+            self.assertIn("CYBERDASH_START_DELAY=0", runner)
 
             subprocess.run(
                 [str(PROJECT / "disable_kiosk_startup.sh")],
@@ -94,8 +109,8 @@ class StartupScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                (labwc_dir / "autostart").read_text(encoding="utf-8"),
-                original_labwc,
+                session_autostart.read_text(encoding="utf-8"),
+                original_session,
             )
             self.assertEqual(
                 (desktop_dir / "cyberdash-red.desktop").read_text(
@@ -103,6 +118,12 @@ class StartupScriptTests(unittest.TestCase):
                 ),
                 original_desktop_entry,
             )
+
+    def test_labwc_kiosk_install_and_disable_restore_original_session(self):
+        self._assert_kiosk_round_trip("labwc")
+
+    def test_lxde_kiosk_install_and_disable_restore_original_session(self):
+        self._assert_kiosk_round_trip("lxde", auto_detect=True)
 
     def test_fullscreen_dashboard_hides_pointer(self):
         source = (PROJECT / "dashboard_v2.py").read_text(encoding="utf-8")
