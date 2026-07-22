@@ -37,7 +37,7 @@ FRAME_DIRECTORY = (
 # The glow is one soft Kivy texture. Its placement comes from the same frame
 # index as the Civic, so it cannot advance on a separate timer or path.
 GLOW_ENABLED = True
-GLOW_OPACITY = 0.72
+GLOW_OPACITY = 1.0
 GLOW_TEXTURE_SIZE = (256, 64)
 FRAME_PIXEL_SIZE = (576.0, 264.0)
 

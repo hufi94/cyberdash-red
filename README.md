@@ -149,7 +149,7 @@ The default rotation speed is defined near the top of `civic_360_widget.py`:
 ```python
 ROTATION_SECONDS = 12.0
 FADE_IN_SECONDS = 1.5
-GLOW_OPACITY = 0.72
+GLOW_OPACITY = 1.0
 ```
 
 A larger number rotates more slowly. The player uses elapsed time rather than
@@ -171,8 +171,12 @@ projection together in the same `update_rotation` call, so there is no second
 timer or independent motion. The glow is hidden during loading and fades in
 at exactly the same time as the Civic.
 
-For quick tuning, lower `GLOW_OPACITY` for less brightness. Set
-`GLOW_ENABLED = False` to turn it off without changing any PNG frame.
+The default effect is deliberately large and bright: its projected strip is
+`52` source pixels wide, its center alpha is `250`, and its broad falloff is
+`1.55`. For quick tuning, lower `GLOW_OPACITY` for less brightness. Adjust
+`EDGE_GLOW_THICKNESS`, `GLOW_MAXIMUM_ALPHA`, or `GLOW_FALLOFF_POWER` in
+`floor_glow.py` to change its spread, center intensity, or bloom softness.
+Set `GLOW_ENABLED = False` to turn it off without changing any PNG frame.
 
 ## Optional: rebuild the transparent frames
 
