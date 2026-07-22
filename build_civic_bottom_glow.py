@@ -120,9 +120,10 @@ def circular_smooth(values: list[float], radius: int) -> list[float]:
 def sequence_glow_geometry(
     frame_paths: list[Path],
 ) -> list[tuple[float, float, float, float]]:
-    """Build one stable turntable-centered footprint for every frame."""
+    """Build a smooth footprint that follows the Civic through every frame."""
 
     sizes = []
+    raw_center_x = []
     raw_center_y = []
     car_heights = []
     for frame_path in frame_paths:
@@ -133,6 +134,7 @@ def sequence_glow_geometry(
             raise RuntimeError(f"No Civic pixels detected: {frame_path}")
         left, top, right, bottom = box
         sizes.append((width, height))
+        raw_center_x.append((left + right) / 2.0)
         car_height = bottom - top
         car_heights.append(car_height)
         raw_center_y.append(bottom - car_height * SOURCE_INSET_RATIO)
@@ -141,7 +143,7 @@ def sequence_glow_geometry(
         raise RuntimeError("All Civic frames must share one canvas size")
 
     canvas_width, _canvas_height = sizes[0]
-    center_x = canvas_width / 2.0
+    center_x_values = circular_smooth(raw_center_x, GEOMETRY_SMOOTH_RADIUS)
     center_y_values = circular_smooth(raw_center_y, GEOMETRY_SMOOTH_RADIUS)
     glow_height = max(8.0, float(np.median(car_heights)) * GLOW_HEIGHT_RATIO)
     minimum_width = canvas_width * MIN_SEQUENCE_WIDTH_RATIO
@@ -149,10 +151,13 @@ def sequence_glow_geometry(
 
     result = []
     frame_count = len(frame_paths)
-    for index, center_y in enumerate(center_y_values):
+    for index, (center_x, center_y) in enumerate(
+        zip(center_x_values, center_y_values)
+    ):
         # Frame zero is the rear view, a side view occurs one quarter-turn
         # later, and the front appears at half a turn. This analytic footprint
-        # changes width continuously while its turntable pivot never wanders.
+        # changes width continuously while its center follows the same smoothed
+        # path as the Civic artwork in the source frames.
         phase = 2.0 * np.pi * index / frame_count
         projected_length = minimum_width * float(np.cos(phase))
         projected_side = maximum_width * float(np.sin(phase))
@@ -161,15 +166,19 @@ def sequence_glow_geometry(
 
     # The solid car mask can hide more of one half of the bloom at oblique
     # angles. Correct the hidden source position until the *visible* reflected
-    # light remains centered on the fixed turntable pivot. This eliminates the
-    # apparent sideways slide without adding a second animation layer.
+    # light follows the Civic's smoothed frame center. This eliminates the
+    # apparent independent slide without adding a second animation layer.
     stabilized = []
-    for frame_path, geometry in zip(frame_paths, result):
+    for frame_path, geometry, target_x in zip(
+        frame_paths,
+        result,
+        center_x_values,
+    ):
         with Image.open(frame_path) as frame:
             frame.load()
             rgba = frame.convert("RGBA")
         stabilized.append(
-            stabilize_visible_pivot(rgba, geometry, target_x=center_x)
+            stabilize_visible_pivot(rgba, geometry, target_x=target_x)
         )
     return stabilized
 

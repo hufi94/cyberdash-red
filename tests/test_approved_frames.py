@@ -6,7 +6,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw
 
-from build_civic_bottom_glow import add_bottom_glow
+from build_civic_bottom_glow import (
+    GEOMETRY_SMOOTH_RADIUS,
+    add_bottom_glow,
+    circular_smooth,
+)
 from build_approved_civic_frames import (
     EXPECTED_FRAME_COUNT,
     LAMP_OPACITY,
@@ -115,6 +119,7 @@ class BottomGlowFrameSetTest(unittest.TestCase):
             [path.name for path in source_paths],
         )
 
+        raw_civic_centers = []
         visible_glow_centers = []
         for source_path, glow_path in zip(source_paths, glow_paths):
             with Image.open(source_path) as source_image:
@@ -151,13 +156,23 @@ class BottomGlowFrameSetTest(unittest.TestCase):
 
             alpha_box = Image.fromarray(source[..., 3], "L").getbbox()
             self.assertIsNotNone(alpha_box)
-            _left, top, _right, bottom = alpha_box
+            left, top, right, bottom = alpha_box
+            raw_civic_centers.append((left + right) / 2.0)
             first_red_y = int(np.flatnonzero(red_pixels)[0] // red_pixels.shape[1])
             self.assertGreater(first_red_y, top + (bottom - top) * 0.48)
 
+        target_centers = circular_smooth(
+            raw_civic_centers,
+            GEOMETRY_SMOOTH_RADIUS,
+        )
+        center_errors = [
+            abs(visible - target)
+            for visible, target in zip(visible_glow_centers, target_centers)
+        ]
+        self.assertGreater(max(target_centers) - min(target_centers), 50.0)
         self.assertLess(
-            max(visible_glow_centers) - min(visible_glow_centers),
-            4.0,
+            max(center_errors),
+            1.5,
         )
 
     def test_glow_geometry_has_one_smooth_complete_rotation(self):
