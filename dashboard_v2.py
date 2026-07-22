@@ -35,12 +35,13 @@ import math
 import random
 from datetime import datetime
 
+from PIL import Image as PILImage
+from PIL import ImageDraw
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.graphics import (
     Color,
-    Ellipse,
     Line,
     Mesh,
     PopMatrix,
@@ -50,6 +51,7 @@ from kivy.graphics import (
     Scale,
     Translate,
 )
+from kivy.graphics.texture import Texture
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
 from kivy.uix.floatlayout import FloatLayout
@@ -165,65 +167,95 @@ class RacingPanel(Widget):
 
 
 class ThermometerGaugeIcon(Widget):
-    """Rounded white/red thermometer with three scale marks."""
+    """Anti-aliased white/red thermometer rendered from a large texture."""
+
+    _smooth_texture = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.__class__._smooth_texture is None:
+            self.__class__._smooth_texture = self.build_smooth_texture()
         with self.canvas:
-            Color(*WHITE)
-            self.outer_bulb = Line(circle=(0, 0, 1), width=2.0)
-            self.outer_stem = Line(
-                rounded_rectangle=(0, 0, 1, 1, 1),
-                width=2.0,
-            )
-            self.scale_marks = [Line(points=[], width=1.8) for _ in range(3)]
-            Color(*RED)
-            self.mercury = RoundedRectangle(
+            Color(1, 1, 1, 1)
+            self.icon_rectangle = Rectangle(
+                texture=self.__class__._smooth_texture,
                 pos=self.pos,
-                size=(0, 0),
-                radius=[dp(2)],
+                size=self.size,
             )
-            self.mercury_bulb = Ellipse(pos=self.pos, size=(0, 0))
         self.bind(pos=self.update_canvas, size=self.update_canvas)
         self.update_canvas()
 
+    @staticmethod
+    def build_smooth_texture():
+        drawing_scale = 8
+        width = 38 * drawing_scale
+        height = 44 * drawing_scale
+        image = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+
+        def scaled_box(left, top, right, bottom):
+            return tuple(
+                round(value * drawing_scale)
+                for value in (left, top, right, bottom)
+            )
+
+        white = (246, 246, 250, 255)
+        red = (255, 8, 28, 255)
+        transparent = (0, 0, 0, 0)
+
+        # Outer white housing, then a transparent inset to create the outline.
+        draw.rounded_rectangle(
+            scaled_box(7, 1, 17, 32),
+            radius=5 * drawing_scale,
+            fill=white,
+        )
+        draw.ellipse(scaled_box(2, 22, 22, 42), fill=white)
+        draw.rounded_rectangle(
+            scaled_box(9, 3, 15, 31),
+            radius=3 * drawing_scale,
+            fill=transparent,
+        )
+        draw.ellipse(scaled_box(4, 24, 20, 40), fill=transparent)
+
+        # Red mercury and bulb.
+        draw.rounded_rectangle(
+            scaled_box(10.5, 9, 13.5, 33),
+            radius=1.5 * drawing_scale,
+            fill=red,
+        )
+        draw.ellipse(scaled_box(6.5, 27, 17.5, 38), fill=red)
+
+        # Three white temperature scale marks from the supplied reference.
+        for left, top, right, bottom in (
+            (23, 8, 35, 10.5),
+            (23, 16, 32, 18.5),
+            (23, 24, 35, 26.5),
+        ):
+            draw.rounded_rectangle(
+                scaled_box(left, top, right, bottom),
+                radius=1.25 * drawing_scale,
+                fill=white,
+            )
+
+        # Pre-filter once, then let Kivy use linear filtering for final display.
+        image = image.resize(
+            (width // 2, height // 2),
+            PILImage.Resampling.LANCZOS,
+        )
+        texture = Texture.create(size=image.size, colorfmt="rgba")
+        texture.blit_buffer(
+            image.tobytes(),
+            colorfmt="rgba",
+            bufferfmt="ubyte",
+        )
+        texture.flip_vertical()
+        texture.mag_filter = "linear"
+        texture.min_filter = "linear"
+        return texture
+
     def update_canvas(self, *_):
-        center_x = self.center_x
-        bulb_y = self.y + dp(10)
-        outer_radius = min(dp(9), self.height * 0.22)
-        stem_width = dp(10)
-        stem_top = self.top - dp(2)
-        stem_height = max(dp(10), stem_top - bulb_y)
-
-        self.outer_bulb.circle = (center_x, bulb_y, outer_radius)
-        self.outer_stem.rounded_rectangle = (
-            center_x - stem_width / 2,
-            bulb_y,
-            stem_width,
-            stem_height,
-            stem_width / 2,
-        )
-
-        mark_start = center_x + outer_radius + dp(4)
-        mark_end = min(self.right - dp(1), mark_start + dp(8))
-        for index, mark in enumerate(self.scale_marks):
-            mark_y = stem_top - dp(7) - index * dp(9)
-            short_end = mark_end - (dp(2) if index == 1 else 0)
-            mark.points = [mark_start, mark_y, short_end, mark_y]
-
-        mercury_width = dp(4)
-        mercury_top = stem_top - dp(6)
-        self.mercury.pos = (center_x - mercury_width / 2, bulb_y)
-        self.mercury.size = (
-            mercury_width,
-            max(dp(6), mercury_top - bulb_y),
-        )
-        red_radius = outer_radius * 0.62
-        self.mercury_bulb.pos = (
-            center_x - red_radius,
-            bulb_y - red_radius,
-        )
-        self.mercury_bulb.size = (red_radius * 2, red_radius * 2)
+        self.icon_rectangle.pos = self.pos
+        self.icon_rectangle.size = self.size
 
 
 class SegmentedTemperatureBar(Widget):
