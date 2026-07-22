@@ -94,7 +94,8 @@ class DashboardColourTest(unittest.TestCase):
         source = (PROJECT / "dashboard_v2.py").read_text(encoding="utf-8")
 
         self.assertIn("SegmentedTemperatureBar", source)
-        self.assertIn("ThermometerIcon", source)
+        self.assertIn("ClimateDialIcon", source)
+        self.assertNotIn("ThermometerIcon", source)
         self.assertIn("visualizer_row_color", source)
         self.assertIn("HONDA CIVIC EG9", source)
         self.assertNotIn("self.background_lines", source)

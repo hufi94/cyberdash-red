@@ -163,37 +163,35 @@ class RacingPanel(Widget):
         ]
 
 
-class ThermometerIcon(Widget):
-    """Compact red outline thermometer used by both climate rows."""
+class ClimateDialIcon(Widget):
+    """Clean red climate dial used by both temperature rows."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         with self.canvas:
             Color(*RED)
-            self.bulb = Line(circle=(0, 0, 1), width=1.6)
-            self.stem = Line(points=[], width=1.6)
-            self.mercury = Line(points=[], width=2.0)
+            self.outer_ring = Line(circle=(0, 0, 1), width=1.5)
+            self.inner_ring = Line(circle=(0, 0, 1), width=1.5)
+            self.rays = [Line(points=[], width=1.4) for _ in range(4)]
         self.bind(pos=self.update_canvas, size=self.update_canvas)
         self.update_canvas()
 
     def update_canvas(self, *_):
         center_x = self.center_x
-        bulb_y = self.y + dp(7)
-        radius = min(dp(5), self.width * 0.24)
-        stem_half = radius * 0.58
-        stem_top = self.top - dp(3)
-        self.bulb.circle = (center_x, bulb_y, radius)
-        self.stem.points = [
-            center_x - stem_half,
-            bulb_y + radius * 0.7,
-            center_x - stem_half,
-            stem_top,
-            center_x + stem_half,
-            stem_top,
-            center_x + stem_half,
-            bulb_y + radius * 0.7,
-        ]
-        self.mercury.points = [center_x, bulb_y, center_x, stem_top - dp(3)]
+        center_y = self.center_y
+        radius = min(dp(8), self.width * 0.27, self.height * 0.22)
+        self.outer_ring.circle = (center_x, center_y, radius)
+        self.inner_ring.circle = (center_x, center_y, radius * 0.28)
+        for index, ray in enumerate(self.rays):
+            angle = math.radians(index * 90)
+            start_radius = radius * 1.28
+            end_radius = radius * 1.72
+            ray.points = [
+                center_x + math.cos(angle) * start_radius,
+                center_y + math.sin(angle) * start_radius,
+                center_x + math.cos(angle) * end_radius,
+                center_y + math.sin(angle) * end_radius,
+            ]
 
 
 class SegmentedTemperatureBar(Widget):
@@ -578,28 +576,29 @@ class Dashboard(FloatLayout):
                     layout.header_y + dp(4),
                 ),
                 (dp(190), layout.header_height - dp(8)),
-                self.font_size(10),
+                self.font_size(12),
                 color=LIGHT_GREY,
                 halign="right",
                 markup=True,
             )
         )
 
-    def panel_title(self, panel, text, reserve_end=0):
+    def panel_title(self, panel, text, reserve_end=0, align_left=False):
         side_padding = dp(16 if self.compact_mode else 18)
-        self.add_widget(
-            fixed_label(
-                f"[b][color=ff1c2b]{text}[/color][/b]",
-                (panel.x + side_padding, panel.top - dp(39)),
-                (
-                    panel.width - side_padding * 2 - dp(reserve_end),
-                    dp(24),
-                ),
-                self.font_size(13),
-                halign="left",
-                markup=True,
-            )
+        title = fixed_label(
+            f"[b][color=ff1c2b]{text}[/color][/b]",
+            (panel.x + side_padding, panel.top - dp(39)),
+            (
+                panel.width - side_padding * 2 - dp(reserve_end),
+                dp(24),
+            ),
+            self.font_size(13),
+            halign="left" if align_left else "center",
+            markup=True,
         )
+        if align_left:
+            title.text_size = title.size
+        self.add_widget(title)
 
     def create_time_panel(self):
         panel = self.top_left_panel
@@ -614,9 +613,9 @@ class Dashboard(FloatLayout):
             ),
             (
                 panel.width - time_width_padding,
-                dp(82 if self.compact_mode else 72),
+                dp(88 if self.compact_mode else 72),
             ),
-            self.number_font_size(60),
+            self.number_font_size(64),
         )
         self.seconds_label = fixed_label(
             "00",
@@ -624,8 +623,8 @@ class Dashboard(FloatLayout):
                 panel.right - dp(61 if self.compact_mode else 64),
                 panel.y + dp(89),
             ),
-            (dp(46), dp(34)),
-            self.number_font_size(20),
+            (dp(48), dp(38)),
+            self.number_font_size(22),
             color=RED,
         )
         divider_padding = dp(14 if self.compact_mode else 18)
@@ -641,7 +640,7 @@ class Dashboard(FloatLayout):
             "MONDAY 01 JANUARY 2026",
             (panel.x + date_padding, panel.y + dp(25)),
             (panel.width - date_padding * 2, dp(30)),
-            self.font_size(13),
+            self.font_size(15),
             color=LIGHT_GREY,
         )
         for label in (self.time_label, self.seconds_label, self.date_label):
@@ -654,7 +653,7 @@ class Dashboard(FloatLayout):
             "CONNECTING",
             (panel.right - dp(138), panel.top - dp(39)),
             (dp(120), dp(24)),
-            self.font_size(8),
+            self.font_size(10),
             color=LIGHT_GREY,
             halign="right",
         )
@@ -663,7 +662,7 @@ class Dashboard(FloatLayout):
         icon_height = dp(42 if self.compact_mode else 38)
         icon_x = panel.x + dp(12 if self.compact_mode else 14)
         self.add_widget(
-            ThermometerIcon(
+            ClimateDialIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
                 pos=(icon_x, panel.y + dp(98 if self.compact_mode else 100)),
@@ -674,16 +673,16 @@ class Dashboard(FloatLayout):
                 "INSIDE",
                 (panel.x + dp(48), panel.y + dp(111)),
                 (dp(90), dp(24)),
-                self.font_size(12),
+                self.font_size(14),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.inside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(104), panel.y + dp(102)),
-            (dp(86), dp(42)),
-            self.number_font_size(27),
+            (panel.right - dp(110), panel.y + dp(99)),
+            (dp(92), dp(48)),
+            self.number_font_size(31),
             halign="right",
         )
         self.add_widget(self.inside_value_label)
@@ -700,7 +699,7 @@ class Dashboard(FloatLayout):
         self.add_widget(self.inside_bar)
 
         self.add_widget(
-            ThermometerIcon(
+            ClimateDialIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
                 pos=(icon_x, panel.y + dp(38 if self.compact_mode else 40)),
@@ -711,16 +710,16 @@ class Dashboard(FloatLayout):
                 "OUTSIDE",
                 (panel.x + dp(48), panel.y + dp(51)),
                 (dp(90), dp(24)),
-                self.font_size(12),
+                self.font_size(14),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.outside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(104), panel.y + dp(42)),
-            (dp(86), dp(42)),
-            self.number_font_size(27),
+            (panel.right - dp(110), panel.y + dp(39)),
+            (dp(92), dp(48)),
+            self.number_font_size(31),
             halign="right",
         )
         self.add_widget(self.outside_value_label)
@@ -736,7 +735,12 @@ class Dashboard(FloatLayout):
 
     def create_vehicle_panel(self):
         panel = self.bottom_left_panel
-        self.panel_title(panel, "VEHICLE PROFILE", reserve_end=92)
+        self.panel_title(
+            panel,
+            "VEHICLE PROFILE",
+            reserve_end=92,
+            align_left=True,
+        )
         chip_width = dp(78 if self.compact_mode else 74)
         chip_height = dp(24 if self.compact_mode else 22)
         chip_right = dp(12 if self.compact_mode else 14)
