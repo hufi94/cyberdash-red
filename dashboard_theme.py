@@ -31,7 +31,8 @@ class DashboardPanels:
 
 
 COMPACT_WIDTH_LIMIT = 680.0
-COMPACT_UI_SCALE = 1.08
+COMPACT_UI_SCALE = 1.16
+COMPACT_NUMBER_SCALE = 1.24
 
 
 def dashboard_panels(
@@ -84,6 +85,14 @@ def dashboard_ui_scale(design_width: float) -> float:
 
     if design_width <= COMPACT_WIDTH_LIMIT:
         return COMPACT_UI_SCALE
+    return 1.0
+
+
+def dashboard_number_scale(design_width: float) -> float:
+    """Give the clock and temperature values extra compact-screen emphasis."""
+
+    if design_width <= COMPACT_WIDTH_LIMIT:
+        return COMPACT_NUMBER_SCALE
     return 1.0
 
 

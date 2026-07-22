@@ -59,6 +59,7 @@ from civic_360_widget import Civic360Player, ROTATION_SECONDS
 from dashboard_theme import (
     active_temperature_segments,
     clipped_outline_points,
+    dashboard_number_scale,
     dashboard_ui_scale,
     responsive_dashboard_panels,
     visualizer_row_color,
@@ -432,6 +433,7 @@ class Dashboard(FloatLayout):
     def __init__(self, design_width=DESIGN_WIDTH, **kwargs):
         self.design_width = design_width
         self.ui_scale = dashboard_ui_scale(design_width)
+        self.number_scale = dashboard_number_scale(design_width)
         self.compact_mode = self.ui_scale > 1.0
         self.panel_layout = responsive_dashboard_panels(
             design_width,
@@ -460,6 +462,11 @@ class Dashboard(FloatLayout):
         """Boost important typography only on the compact Pi display."""
 
         return value * self.ui_scale
+
+    def number_font_size(self, value):
+        """Scale the primary clock and climate readings independently."""
+
+        return value * self.number_scale
 
     def create_background(self):
         with self.canvas.before:
@@ -601,9 +608,15 @@ class Dashboard(FloatLayout):
         time_width_padding = dp(84 if self.compact_mode else 94)
         self.time_label = fixed_label(
             "00:00",
-            (panel.x + time_left, panel.y + dp(76)),
-            (panel.width - time_width_padding, dp(72)),
-            self.font_size(60),
+            (
+                panel.x + time_left,
+                panel.y + dp(72 if self.compact_mode else 76),
+            ),
+            (
+                panel.width - time_width_padding,
+                dp(82 if self.compact_mode else 72),
+            ),
+            self.number_font_size(60),
         )
         self.seconds_label = fixed_label(
             "00",
@@ -611,8 +624,8 @@ class Dashboard(FloatLayout):
                 panel.right - dp(61 if self.compact_mode else 64),
                 panel.y + dp(89),
             ),
-            (dp(44), dp(30)),
-            self.font_size(20),
+            (dp(46), dp(34)),
+            self.number_font_size(20),
             color=RED,
         )
         divider_padding = dp(14 if self.compact_mode else 18)
@@ -670,7 +683,7 @@ class Dashboard(FloatLayout):
             "--.-°",
             (panel.right - dp(104), panel.y + dp(102)),
             (dp(86), dp(42)),
-            self.font_size(27),
+            self.number_font_size(27),
             halign="right",
         )
         self.add_widget(self.inside_value_label)
@@ -707,7 +720,7 @@ class Dashboard(FloatLayout):
             "--.-°",
             (panel.right - dp(104), panel.y + dp(42)),
             (dp(86), dp(42)),
-            self.font_size(27),
+            self.number_font_size(27),
             halign="right",
         )
         self.add_widget(self.outside_value_label)
