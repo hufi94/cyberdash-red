@@ -150,6 +150,7 @@ The default rotation speed is defined near the top of `civic_360_widget.py`:
 ROTATION_SECONDS = 12.0
 FADE_IN_SECONDS = 1.5
 GLOW_OPACITY = 1.0
+GLOW_FADE_EXTENSION_SECONDS = 1.0
 ```
 
 A larger number rotates more slowly. The player uses elapsed time rather than
@@ -170,6 +171,12 @@ frame instead of a horizontal bar. The player changes the Civic PNG and floor
 projection together in the same `update_rotation` call, so there is no second
 timer or independent motion. The glow is hidden during loading and fades in
 at exactly the same time as the Civic.
+
+Each projected side of the glow begins fading in one second earlier and
+finishes fading out one second later. The overlapping light is drawn behind
+the transparent Civic frames, so the longer fade remains beneath the car
+instead of shining over its body. Change `GLOW_FADE_EXTENSION_SECONDS` to tune
+that overlap without altering rotation speed or floor geometry.
 
 The default effect is deliberately large and bright: its projected strip is
 `52` source pixels wide, its center alpha is `250`, and its broad falloff is
