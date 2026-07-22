@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from floor_glow import build_floor_glow_rgba
+from floor_glow import build_floor_glow_rgba, read_floor_glow_tracking
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -31,6 +31,40 @@ class FloorGlowTest(unittest.TestCase):
         )
         self.assertIn('    / "civic_frames_outline"', player_source)
         self.assertNotIn('    / "civic_frames_bottom_glow"', player_source)
+
+    def test_tracking_covers_the_complete_rotation_smoothly(self):
+        tracking_path = (
+            PROJECT
+            / "assets"
+            / "civic_frames_outline"
+            / "floor_glow_tracking.tsv"
+        )
+        tracking = read_floor_glow_tracking(tracking_path)
+        names = [f"frame_{index:04d}.png" for index in range(220)]
+        self.assertEqual(list(tracking), names)
+
+        geometry = [tracking[name] for name in names]
+
+        def largest_loop_step(values):
+            return max(
+                abs(values[(index + 1) % len(values)] - values[index])
+                for index in range(len(values))
+            )
+
+        self.assertLess(
+            largest_loop_step([item.center_x for item in geometry]),
+            5.0,
+        )
+        self.assertLess(
+            largest_loop_step([item.center_y for item in geometry]),
+            1.5,
+        )
+        self.assertLess(
+            largest_loop_step([item.width for item in geometry]),
+            7.0,
+        )
+        self.assertGreater(max(item.center_x for item in geometry), 318.0)
+        self.assertLess(min(item.center_x for item in geometry), 263.0)
 
 
 if __name__ == "__main__":

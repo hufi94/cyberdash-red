@@ -13,7 +13,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 
-from floor_glow import build_floor_glow_rgba
+from floor_glow import build_floor_glow_rgba, read_floor_glow_tracking
 
 
 ROTATION_SECONDS = 12.0
@@ -26,14 +26,13 @@ FRAME_DIRECTORY = (
     / "civic_frames_outline"
 )
 
-# The glow is one stationary, soft floor reflection behind the rotating PNGs.
-# Keeping it independent of the frame geometry prevents sideways drift.
+# The glow is one soft Kivy texture. Its placement comes from the same frame
+# index as the Civic, so it cannot advance on a separate timer or path.
 GLOW_ENABLED = True
 GLOW_OPACITY = 0.72
-GLOW_WIDTH_RATIO = 0.54
-GLOW_HEIGHT_RATIO = 0.12
-GLOW_CENTER_FROM_IMAGE_BOTTOM = 0.055
 GLOW_TEXTURE_SIZE = (256, 64)
+FRAME_PIXEL_SIZE = (576.0, 264.0)
+GLOW_TRACKING_FILENAME = "floor_glow_tracking.tsv"
 
 
 def natural_key(path: Path) -> list[object]:
@@ -66,6 +65,7 @@ class Civic360Player(FloatLayout):
         self.glow_enabled = glow_enabled
         self.glow_opacity = max(0.0, min(1.0, glow_opacity))
         self.frame_paths: list[Path] = []
+        self.glow_tracking = []
         self.textures = []
         self.frame_index = 0
         self.load_index = 0
@@ -131,12 +131,17 @@ class Civic360Player(FloatLayout):
         return texture
 
     def update_floor_glow_geometry(self, *_args) -> None:
-        """Keep one modest glow centered below every rotation angle."""
+        """Map the current frame's tracked glow into the Kivy image area."""
 
-        if self.width <= 0 or self.height <= 0:
+        if (
+            self.width <= 0
+            or self.height <= 0
+            or not self.glow_tracking
+        ):
             return
 
-        frame_aspect = 576.0 / 264.0
+        frame_width, frame_height = FRAME_PIXEL_SIZE
+        frame_aspect = frame_width / frame_height
         widget_aspect = self.width / self.height
         if widget_aspect > frame_aspect:
             image_height = self.height
@@ -145,17 +150,27 @@ class Civic360Player(FloatLayout):
             image_width = self.width
             image_height = image_width / frame_aspect
 
+        image_left = self.center_x - image_width / 2.0
         image_bottom = self.center_y - image_height / 2.0
-        glow_width = image_width * GLOW_WIDTH_RATIO
-        glow_height = image_height * GLOW_HEIGHT_RATIO
+        geometry = self.glow_tracking[
+            min(self.frame_index, len(self.glow_tracking) - 1)
+        ]
+        glow_center_x = (
+            image_left
+            + geometry.center_x / frame_width * image_width
+        )
         glow_center_y = (
             image_bottom
-            + image_height * GLOW_CENTER_FROM_IMAGE_BOTTOM
+            + (frame_height - geometry.center_y)
+            / frame_height
+            * image_height
         )
+        glow_width = geometry.width / frame_width * image_width
+        glow_height = geometry.height / frame_height * image_height
 
         self.floor_glow.size = (glow_width, glow_height)
         self.floor_glow.pos = (
-            self.center_x - glow_width / 2.0,
+            glow_center_x - glow_width / 2.0,
             glow_center_y - glow_height / 2.0,
         )
 
@@ -182,6 +197,19 @@ class Civic360Player(FloatLayout):
             self.frame_paths.reverse()
 
         try:
+            tracking_by_frame = read_floor_glow_tracking(
+                self.frames_dir / GLOW_TRACKING_FILENAME
+            )
+            self.glow_tracking = [
+                tracking_by_frame[path.name]
+                for path in self.frame_paths
+            ]
+        except (KeyError, OSError, TypeError, ValueError) as error:
+            self.glow_enabled = False
+            self.floor_glow.opacity = 0
+            print(f"Civic glow tracking disabled: {error}")
+
+        try:
             first_texture = self.load_texture(self.frame_paths[0])
         except Exception as error:
             self.status_label.text = "CIVIC FRAME ERROR"
@@ -191,6 +219,7 @@ class Civic360Player(FloatLayout):
         self.textures.append(first_texture)
         self.load_index = 1
         self.car_image.texture = first_texture
+        self.update_floor_glow_geometry()
         self.load_event = Clock.schedule_interval(self.load_batch, 0)
 
     @staticmethod
@@ -258,3 +287,4 @@ class Civic360Player(FloatLayout):
             return
         self.frame_index = index
         self.car_image.texture = self.textures[index]
+        self.update_floor_glow_geometry()
