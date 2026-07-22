@@ -44,6 +44,8 @@ The full motion preview is available here:
 - `civic_360_widget.py` — reusable player used by both Kivy programs
 - `start_dashboard.sh` — launches V2 without opening a Terminal window
 - `install_autostart.sh` — enables launch after the Pi desktop starts
+- `install_kiosk_startup.sh` — starts only Cyberdash in the labwc session
+- `disable_kiosk_startup.sh` — safely restores the previous desktop startup
 - `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
 - `build_approved_civic_frames.py` — optional frame rebuilding tool
 - `floor_glow.py` — projects the rotating soft red floor frame in code
@@ -144,6 +146,61 @@ cd ~/Desktop/cyberdash_red
 ```
 
 The disabled entry is renamed with a timestamp instead of being deleted.
+
+## Fast kiosk startup without showing the desktop
+
+Recent Raspberry Pi OS releases use the labwc Wayland desktop. Cyberdash can
+replace that session's normal panel and desktop startup so the visible sequence
+is the Raspberry Pi splash, a black screen, and then the dashboard. This keeps
+the working graphical display and dual-HDMI configuration while avoiding the
+desktop flash. The launcher has no delay by default, and the mouse pointer is
+hidden in fullscreen mode.
+
+First confirm that V2 works fullscreen and that the small display is configured
+as the primary display. Then install the reversible kiosk startup:
+
+```bash
+cd ~/Desktop/cyberdash_red
+chmod +x \
+    start_dashboard.sh \
+    install_kiosk_startup.sh \
+    disable_kiosk_startup.sh
+./install_kiosk_startup.sh
+```
+
+Open Raspberry Pi configuration:
+
+```bash
+sudo raspi-config
+```
+
+Confirm these settings before rebooting:
+
+1. **Boot** is set to **Desktop**.
+2. **Desktop Auto Login** is enabled.
+3. **Splash Screen** is enabled.
+
+Then reboot:
+
+```bash
+sudo reboot
+```
+
+If the dashboard exits normally, including by pressing **Esc**, the display
+stays black instead of exposing the desktop. If the dashboard crashes, the
+kiosk launcher waits one second and restarts it.
+
+To restore the normal desktop, press **Ctrl+Alt+F2**, log in, and run:
+
+```bash
+cd ~/Desktop/cyberdash_red
+./disable_kiosk_startup.sh
+sudo reboot
+```
+
+The installer backs up an existing labwc autostart file and the normal
+Cyberdash desktop-autostart entry. The disable script restores both and keeps
+the generated kiosk files in a timestamped recovery folder.
 
 ## Test the two BME280 sensors
 

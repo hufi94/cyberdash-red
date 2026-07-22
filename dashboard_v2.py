@@ -21,7 +21,8 @@ from kivy.config import Config
 
 Config.set("graphics", "width", "640")
 Config.set("graphics", "height", "480")
-if os.environ.get("CYBERDASH_WINDOWED") == "1":
+WINDOWED_MODE = os.environ.get("CYBERDASH_WINDOWED") == "1"
+if WINDOWED_MODE:
     Config.set("graphics", "resizable", "1")
     Config.set("graphics", "fullscreen", "0")
     Config.set("graphics", "borderless", "0")
@@ -87,6 +88,7 @@ INACTIVE_RED = (0.12, 0.012, 0.022, 1)
 # Set this as soon as the Window exists so the initial buffer is black instead
 # of briefly flashing white while the dashboard and Civic textures load.
 Window.clearcolor = BACKGROUND
+Window.show_cursor = WINDOWED_MODE
 
 
 def fixed_label(
