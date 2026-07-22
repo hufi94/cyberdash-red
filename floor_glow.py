@@ -1,7 +1,38 @@
 #!/usr/bin/env python3
-"""Small dependency-free texture builder for the Civic floor reflection."""
+"""Texture and tracking helpers for the Civic floor reflection."""
 
+import csv
+from dataclasses import dataclass
 from math import pow
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class FloorGlowGeometry:
+    """Glow placement in the source frame's top-left pixel coordinates."""
+
+    center_x: float
+    center_y: float
+    width: float
+    height: float
+
+
+def read_floor_glow_tracking(
+    tracking_path: Path,
+) -> dict[str, FloorGlowGeometry]:
+    """Load frame-locked glow geometry keyed by PNG filename."""
+
+    with tracking_path.open(encoding="utf-8", newline="") as tracking_file:
+        rows = csv.DictReader(tracking_file, delimiter="\t")
+        return {
+            row["frame"]: FloorGlowGeometry(
+                center_x=float(row["center_x"]),
+                center_y=float(row["center_y"]),
+                width=float(row["width"]),
+                height=float(row["height"]),
+            )
+            for row in rows
+        }
 
 
 def build_floor_glow_rgba(

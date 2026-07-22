@@ -16,8 +16,8 @@ the repository, so the Pi does not need to convert or copy any car frames.
 - one shared crop for all frames, preventing vertical or sideways movement
 - clean no-red frames loaded from `assets/civic_frames_outline`
 - one small, soft Kivy floor reflection drawn behind the Civic
-- no red strip, red body lines or frame-by-frame glow geometry
-- the glow remains centered while only the Civic artwork rotates
+- no red strip, red body lines or separate animation timer
+- the glow position and width use the exact same frame index as the Civic
 
 ![Approved Civic rotation angles](preview/approved_civic_contact.png)
 
@@ -35,6 +35,7 @@ The full motion preview is available here:
 - `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
 - `build_approved_civic_frames.py` — optional frame rebuilding tool
 - `floor_glow.py` — creates the soft red reflection directly in code
+- `build_floor_glow_tracking.py` — rebuilds its frame-locked placement data
 
 `dashboard_v2.py` reads the inside BME280 at `0x77` and the outside BME280 at
 `0x76`. Sensor connection errors are shown on screen without stopping the
@@ -150,8 +151,6 @@ The default rotation speed is defined near the top of `civic_360_widget.py`:
 ROTATION_SECONDS = 12.0
 FADE_IN_SECONDS = 1.5
 GLOW_OPACITY = 0.72
-GLOW_WIDTH_RATIO = 0.54
-GLOW_HEIGHT_RATIO = 0.12
 ```
 
 A larger number rotates more slowly. The player uses elapsed time rather than
@@ -165,14 +164,14 @@ to show the rotating Civic immediately.
 
 The dashboard loads the clean `assets/civic_frames_outline` sequence. Kivy
 creates one soft red floor reflection in memory and places it behind the car.
-It has fully transparent edges and no solid center line. The reflection stays
-centered in the vehicle panel instead of trying to copy the changing 2D frame
-geometry, so it cannot wander sideways or rotate at a different speed. It is
-hidden during loading and fades in at exactly the same time as the Civic.
+It has fully transparent edges and no solid center line. A small tracking file
+records the Civic silhouette center, bottom edge and projected width for all
+220 frames. The player changes the PNG and glow geometry together in the same
+`update_rotation` call, so there is no second timer or independent motion. The
+glow is hidden during loading and fades in at exactly the same time as the
+Civic.
 
-For quick tuning, lower `GLOW_OPACITY` for less brightness, change
-`GLOW_WIDTH_RATIO` to make the pool narrower or wider, and change
-`GLOW_HEIGHT_RATIO` to make it thinner or softer vertically. Set
+For quick tuning, lower `GLOW_OPACITY` for less brightness. Set
 `GLOW_ENABLED = False` to turn it off without changing any PNG frame.
 
 ## Optional: rebuild the transparent frames
@@ -209,12 +208,20 @@ material in each source frame, then baked into that same transparent PNG. Kivy
 does not animate a second lamp layer, so the fills cannot move independently
 of the Civic.
 
+If the transparent Civic frames are rebuilt, rebuild the matching code-glow
+anchors afterward:
+
+```bash
+python build_floor_glow_tracking.py
+```
+
 ## Development checks
 
 ```bash
 python -m unittest discover -s tests -v
 python -m py_compile \
     build_approved_civic_frames.py \
+    build_floor_glow_tracking.py \
     floor_glow.py \
     civic_360_widget.py \
     civic_360_test.py \
