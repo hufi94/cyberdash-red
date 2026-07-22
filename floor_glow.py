@@ -22,7 +22,9 @@ LONGITUDINAL_X = 355.0
 LONGITUDINAL_DEPTH = 92.0
 LATERAL_X = 215.0
 LATERAL_DEPTH = 28.0
-EDGE_GLOW_THICKNESS = 28.0
+EDGE_GLOW_THICKNESS = 52.0
+GLOW_MAXIMUM_ALPHA = 250
+GLOW_FALLOFF_POWER = 1.55
 
 
 def rotation_phase(frame_index: int, frame_count: int = FLOOR_FRAME_COUNT) -> float:
@@ -129,7 +131,8 @@ def glow_strip_corners(
 def build_floor_glow_rgba(
     width: int = 256,
     height: int = 64,
-    maximum_alpha: int = 205,
+    maximum_alpha: int = GLOW_MAXIMUM_ALPHA,
+    falloff_power: float = GLOW_FALLOFF_POWER,
 ) -> bytes:
     """Return a soft red ellipse with fully transparent outer edges.
 
@@ -142,6 +145,8 @@ def build_floor_glow_rgba(
         raise ValueError("floor glow texture must be at least 3 by 3 pixels")
     if not 0 <= maximum_alpha <= 255:
         raise ValueError("maximum_alpha must be between 0 and 255")
+    if falloff_power <= 0:
+        raise ValueError("falloff_power must be greater than zero")
 
     center_x = (width - 1) / 2.0
     center_y = (height - 1) * 0.56
@@ -164,9 +169,9 @@ def build_floor_glow_rgba(
 
             alpha = 0
             if radius_squared < 1.0:
-                # A high-order falloff removes the visible red strip that the
-                # previous underglow versions produced.
-                falloff = pow(1.0 - radius_squared, 2.35)
+                # The broad falloff keeps the outer edge invisible while
+                # spreading a much stronger neon reflection beneath the car.
+                falloff = pow(1.0 - radius_squared, falloff_power)
                 alpha = round(maximum_alpha * falloff)
 
             pixels[offset : offset + 4] = (255, 8, 18, alpha)

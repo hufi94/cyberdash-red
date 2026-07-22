@@ -2,6 +2,9 @@ import unittest
 from pathlib import Path
 
 from floor_glow import (
+    EDGE_GLOW_THICKNESS,
+    GLOW_FALLOFF_POWER,
+    GLOW_MAXIMUM_ALPHA,
     Point,
     build_floor_glow_rgba,
     glow_strip_corners,
@@ -28,8 +31,13 @@ class FloorGlowTest(unittest.TestCase):
         self.assertTrue(all(value == 0 for value in bottom))
         self.assertTrue(all(value == 0 for value in left))
         self.assertTrue(all(value == 0 for value in right))
-        self.assertGreater(max(alpha), 180)
+        self.assertGreater(max(alpha), 240)
         self.assertGreater(len(set(alpha)), 60)
+
+    def test_default_glow_is_large_and_high_intensity(self):
+        self.assertGreaterEqual(EDGE_GLOW_THICKNESS, 50.0)
+        self.assertGreaterEqual(GLOW_MAXIMUM_ALPHA, 245)
+        self.assertLessEqual(GLOW_FALLOFF_POWER, 1.6)
 
     def test_player_uses_clean_frames_and_not_baked_glow_frames(self):
         player_source = (PROJECT / "civic_360_widget.py").read_text(
