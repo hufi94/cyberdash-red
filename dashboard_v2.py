@@ -35,6 +35,8 @@ import math
 import random
 from datetime import datetime
 
+from PIL import Image as PILImage
+from PIL import ImageDraw
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -49,6 +51,7 @@ from kivy.graphics import (
     Scale,
     Translate,
 )
+from kivy.graphics.texture import Texture
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
 from kivy.uix.floatlayout import FloatLayout
@@ -163,37 +166,96 @@ class RacingPanel(Widget):
         ]
 
 
-class ThermometerIcon(Widget):
-    """Compact red outline thermometer used by both climate rows."""
+class ThermometerGaugeIcon(Widget):
+    """Anti-aliased white/red thermometer rendered from a large texture."""
+
+    _smooth_texture = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.__class__._smooth_texture is None:
+            self.__class__._smooth_texture = self.build_smooth_texture()
         with self.canvas:
-            Color(*RED)
-            self.bulb = Line(circle=(0, 0, 1), width=1.6)
-            self.stem = Line(points=[], width=1.6)
-            self.mercury = Line(points=[], width=2.0)
+            Color(1, 1, 1, 1)
+            self.icon_rectangle = Rectangle(
+                texture=self.__class__._smooth_texture,
+                pos=self.pos,
+                size=self.size,
+            )
         self.bind(pos=self.update_canvas, size=self.update_canvas)
         self.update_canvas()
 
+    @staticmethod
+    def build_smooth_texture():
+        drawing_scale = 8
+        width = 38 * drawing_scale
+        height = 44 * drawing_scale
+        image = PILImage.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+
+        def scaled_box(left, top, right, bottom):
+            return tuple(
+                round(value * drawing_scale)
+                for value in (left, top, right, bottom)
+            )
+
+        white = (246, 246, 250, 255)
+        red = (255, 8, 28, 255)
+        transparent = (0, 0, 0, 0)
+
+        # Outer white housing, then a transparent inset to create the outline.
+        draw.rounded_rectangle(
+            scaled_box(7, 1, 17, 32),
+            radius=5 * drawing_scale,
+            fill=white,
+        )
+        draw.ellipse(scaled_box(2, 22, 22, 42), fill=white)
+        draw.rounded_rectangle(
+            scaled_box(9, 3, 15, 31),
+            radius=3 * drawing_scale,
+            fill=transparent,
+        )
+        draw.ellipse(scaled_box(4, 24, 20, 40), fill=transparent)
+
+        # Red mercury and bulb.
+        draw.rounded_rectangle(
+            scaled_box(10.5, 9, 13.5, 33),
+            radius=1.5 * drawing_scale,
+            fill=red,
+        )
+        draw.ellipse(scaled_box(6.5, 27, 17.5, 38), fill=red)
+
+        # Three white temperature scale marks from the supplied reference.
+        for left, top, right, bottom in (
+            (23, 8, 35, 10.5),
+            (23, 16, 32, 18.5),
+            (23, 24, 35, 26.5),
+        ):
+            draw.rounded_rectangle(
+                scaled_box(left, top, right, bottom),
+                radius=1.25 * drawing_scale,
+                fill=white,
+            )
+
+        # Pre-filter once, then let Kivy use linear filtering for final display.
+        image = image.resize(
+            (width // 2, height // 2),
+            PILImage.Resampling.LANCZOS,
+        )
+        texture = Texture.create(size=image.size, colorfmt="rgba")
+        texture.blit_buffer(
+            image.tobytes(),
+            colorfmt="rgba",
+            bufferfmt="ubyte",
+        )
+        texture.flip_vertical()
+        texture.mag_filter = "linear"
+        texture.min_filter = "linear"
+        return texture
+
     def update_canvas(self, *_):
-        center_x = self.center_x
-        bulb_y = self.y + dp(7)
-        radius = min(dp(5), self.width * 0.24)
-        stem_half = radius * 0.58
-        stem_top = self.top - dp(3)
-        self.bulb.circle = (center_x, bulb_y, radius)
-        self.stem.points = [
-            center_x - stem_half,
-            bulb_y + radius * 0.7,
-            center_x - stem_half,
-            stem_top,
-            center_x + stem_half,
-            stem_top,
-            center_x + stem_half,
-            bulb_y + radius * 0.7,
-        ]
-        self.mercury.points = [center_x, bulb_y, center_x, stem_top - dp(3)]
+        self.icon_rectangle.pos = self.pos
+        self.icon_rectangle.size = self.size
 
 
 class SegmentedTemperatureBar(Widget):
@@ -578,28 +640,29 @@ class Dashboard(FloatLayout):
                     layout.header_y + dp(4),
                 ),
                 (dp(190), layout.header_height - dp(8)),
-                self.font_size(10),
+                self.font_size(12),
                 color=LIGHT_GREY,
                 halign="right",
                 markup=True,
             )
         )
 
-    def panel_title(self, panel, text, reserve_end=0):
+    def panel_title(self, panel, text, reserve_end=0, align_left=False):
         side_padding = dp(16 if self.compact_mode else 18)
-        self.add_widget(
-            fixed_label(
-                f"[b][color=ff1c2b]{text}[/color][/b]",
-                (panel.x + side_padding, panel.top - dp(39)),
-                (
-                    panel.width - side_padding * 2 - dp(reserve_end),
-                    dp(24),
-                ),
-                self.font_size(13),
-                halign="left",
-                markup=True,
-            )
+        title = fixed_label(
+            f"[b][color=ff1c2b]{text}[/color][/b]",
+            (panel.x + side_padding, panel.top - dp(39)),
+            (
+                panel.width - side_padding * 2 - dp(reserve_end),
+                dp(24),
+            ),
+            self.font_size(13),
+            halign="left" if align_left else "center",
+            markup=True,
         )
+        if align_left:
+            title.text_size = title.size
+        self.add_widget(title)
 
     def create_time_panel(self):
         panel = self.top_left_panel
@@ -614,9 +677,9 @@ class Dashboard(FloatLayout):
             ),
             (
                 panel.width - time_width_padding,
-                dp(82 if self.compact_mode else 72),
+                dp(88 if self.compact_mode else 72),
             ),
-            self.number_font_size(60),
+            self.number_font_size(64),
         )
         self.seconds_label = fixed_label(
             "00",
@@ -624,8 +687,8 @@ class Dashboard(FloatLayout):
                 panel.right - dp(61 if self.compact_mode else 64),
                 panel.y + dp(89),
             ),
-            (dp(46), dp(34)),
-            self.number_font_size(20),
+            (dp(48), dp(38)),
+            self.number_font_size(22),
             color=RED,
         )
         divider_padding = dp(14 if self.compact_mode else 18)
@@ -641,7 +704,7 @@ class Dashboard(FloatLayout):
             "MONDAY 01 JANUARY 2026",
             (panel.x + date_padding, panel.y + dp(25)),
             (panel.width - date_padding * 2, dp(30)),
-            self.font_size(13),
+            self.font_size(15),
             color=LIGHT_GREY,
         )
         for label in (self.time_label, self.seconds_label, self.date_label):
@@ -654,40 +717,40 @@ class Dashboard(FloatLayout):
             "CONNECTING",
             (panel.right - dp(138), panel.top - dp(39)),
             (dp(120), dp(24)),
-            self.font_size(8),
+            self.font_size(10),
             color=LIGHT_GREY,
             halign="right",
         )
         self.add_widget(self.temperature_status_label)
-        icon_width = dp(30 if self.compact_mode else 28)
-        icon_height = dp(42 if self.compact_mode else 38)
-        icon_x = panel.x + dp(12 if self.compact_mode else 14)
+        icon_width = dp(38 if self.compact_mode else 34)
+        icon_height = dp(44 if self.compact_mode else 40)
+        icon_x = panel.x + dp(10 if self.compact_mode else 12)
         self.add_widget(
-            ThermometerIcon(
+            ThermometerGaugeIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
-                pos=(icon_x, panel.y + dp(98 if self.compact_mode else 100)),
+                pos=(icon_x, panel.y + dp(96 if self.compact_mode else 99)),
             )
         )
         self.add_widget(
             fixed_label(
                 "INSIDE",
-                (panel.x + dp(48), panel.y + dp(111)),
+                (panel.x + dp(53), panel.y + dp(111)),
                 (dp(90), dp(24)),
-                self.font_size(12),
+                self.font_size(14),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.inside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(104), panel.y + dp(102)),
-            (dp(86), dp(42)),
-            self.number_font_size(27),
+            (panel.right - dp(110), panel.y + dp(99)),
+            (dp(92), dp(48)),
+            self.number_font_size(31),
             halign="right",
         )
         self.add_widget(self.inside_value_label)
-        bar_left = dp(46 if self.compact_mode else 52)
+        bar_left = dp(52 if self.compact_mode else 55)
         bar_right = dp(12 if self.compact_mode else 18)
         self.inside_bar = SegmentedTemperatureBar(
             minimum=-20,
@@ -700,27 +763,27 @@ class Dashboard(FloatLayout):
         self.add_widget(self.inside_bar)
 
         self.add_widget(
-            ThermometerIcon(
+            ThermometerGaugeIcon(
                 size_hint=(None, None),
                 size=(icon_width, icon_height),
-                pos=(icon_x, panel.y + dp(38 if self.compact_mode else 40)),
+                pos=(icon_x, panel.y + dp(36 if self.compact_mode else 39)),
             )
         )
         self.add_widget(
             fixed_label(
                 "OUTSIDE",
-                (panel.x + dp(48), panel.y + dp(51)),
+                (panel.x + dp(53), panel.y + dp(51)),
                 (dp(90), dp(24)),
-                self.font_size(12),
+                self.font_size(14),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.outside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(104), panel.y + dp(42)),
-            (dp(86), dp(42)),
-            self.number_font_size(27),
+            (panel.right - dp(110), panel.y + dp(39)),
+            (dp(92), dp(48)),
+            self.number_font_size(31),
             halign="right",
         )
         self.add_widget(self.outside_value_label)
@@ -736,7 +799,12 @@ class Dashboard(FloatLayout):
 
     def create_vehicle_panel(self):
         panel = self.bottom_left_panel
-        self.panel_title(panel, "VEHICLE PROFILE", reserve_end=92)
+        self.panel_title(
+            panel,
+            "VEHICLE PROFILE",
+            reserve_end=92,
+            align_left=True,
+        )
         chip_width = dp(78 if self.compact_mode else 74)
         chip_height = dp(24 if self.compact_mode else 22)
         chip_right = dp(12 if self.compact_mode else 14)
