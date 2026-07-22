@@ -7,13 +7,21 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.core.image import Image as CoreImage
+from kivy.graphics import Color, Mesh
 from kivy.graphics.texture import Texture
 from kivy.metrics import dp
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 
-from floor_glow import build_floor_glow_rgba, read_floor_glow_tracking
+from floor_glow import (
+    EDGE_GLOW_THICKNESS,
+    Point,
+    build_floor_glow_rgba,
+    glow_strip_corners,
+    projected_edge_strengths,
+    projected_floor_corners,
+)
 
 
 ROTATION_SECONDS = 12.0
@@ -32,7 +40,6 @@ GLOW_ENABLED = True
 GLOW_OPACITY = 0.72
 GLOW_TEXTURE_SIZE = (256, 64)
 FRAME_PIXEL_SIZE = (576.0, 264.0)
-GLOW_TRACKING_FILENAME = "floor_glow_tracking.tsv"
 
 
 def natural_key(path: Path) -> list[object]:
@@ -65,21 +72,30 @@ class Civic360Player(FloatLayout):
         self.glow_enabled = glow_enabled
         self.glow_opacity = max(0.0, min(1.0, glow_opacity))
         self.frame_paths: list[Path] = []
-        self.glow_tracking = []
+        self.frame_source_indices: list[int] = []
         self.textures = []
         self.frame_index = 0
         self.load_index = 0
         self.load_event = None
         self.rotation_event = None
         self.rotation_started_at = None
+        self.current_reveal_opacity = 0.0
+        self.glow_edge_strengths = (0.0, 0.0, 0.0, 0.0)
 
-        self.floor_glow = Image(
-            texture=self.create_floor_glow_texture(),
-            size_hint=(None, None),
-            fit_mode="fill",
-            opacity=0,
-        )
-        self.add_widget(self.floor_glow)
+        glow_texture = self.create_floor_glow_texture()
+        self.glow_colors = []
+        self.glow_meshes = []
+        with self.canvas.before:
+            for _edge_index in range(4):
+                self.glow_colors.append(Color(1, 1, 1, 0))
+                self.glow_meshes.append(
+                    Mesh(
+                        texture=glow_texture,
+                        vertices=[0.0] * 16,
+                        indices=[0, 1, 2, 0, 2, 3],
+                        mode="triangles",
+                    )
+                )
 
         self.car_image = Image(
             size_hint=(1, 1),
@@ -131,12 +147,12 @@ class Civic360Player(FloatLayout):
         return texture
 
     def update_floor_glow_geometry(self, *_args) -> None:
-        """Map the current frame's tracked glow into the Kivy image area."""
+        """Project and map four rotating underbody edges into the Kivy area."""
 
         if (
             self.width <= 0
             or self.height <= 0
-            or not self.glow_tracking
+            or not self.frame_source_indices
         ):
             return
 
@@ -152,27 +168,60 @@ class Civic360Player(FloatLayout):
 
         image_left = self.center_x - image_width / 2.0
         image_bottom = self.center_y - image_height / 2.0
-        geometry = self.glow_tracking[
-            min(self.frame_index, len(self.glow_tracking) - 1)
+        source_index = self.frame_source_indices[
+            min(self.frame_index, len(self.frame_source_indices) - 1)
         ]
-        glow_center_x = (
-            image_left
-            + geometry.center_x / frame_width * image_width
+        source_corners = projected_floor_corners(source_index)
+        self.glow_edge_strengths = projected_edge_strengths(
+            source_index,
+            source_corners,
         )
-        glow_center_y = (
-            image_bottom
-            + (frame_height - geometry.center_y)
-            / frame_height
-            * image_height
+        mapped_corners = tuple(
+            Point(
+                image_left + point.x / frame_width * image_width,
+                image_bottom
+                + (frame_height - point.y) / frame_height * image_height,
+            )
+            for point in source_corners
         )
-        glow_width = geometry.width / frame_width * image_width
-        glow_height = geometry.height / frame_height * image_height
+        thickness = EDGE_GLOW_THICKNESS / frame_height * image_height
 
-        self.floor_glow.size = (glow_width, glow_height)
-        self.floor_glow.pos = (
-            glow_center_x - glow_width / 2.0,
-            glow_center_y - glow_height / 2.0,
-        )
+        for index, mesh in enumerate(self.glow_meshes):
+            start = mapped_corners[index]
+            end = mapped_corners[(index + 1) % 4]
+            strip = glow_strip_corners(start, end, thickness)
+            mesh.vertices = [
+                strip[0].x,
+                strip[0].y,
+                0.0,
+                0.0,
+                strip[1].x,
+                strip[1].y,
+                1.0,
+                0.0,
+                strip[2].x,
+                strip[2].y,
+                1.0,
+                1.0,
+                strip[3].x,
+                strip[3].y,
+                0.0,
+                1.0,
+            ]
+        self.update_floor_glow_opacity()
+
+    def update_floor_glow_opacity(self) -> None:
+        for color, strength in zip(
+            self.glow_colors,
+            self.glow_edge_strengths,
+        ):
+            color.a = (
+                self.current_reveal_opacity
+                * self.glow_opacity
+                * strength
+                if self.glow_enabled
+                else 0.0
+            )
 
     def begin_loading(self, _dt) -> None:
         """Validate the approved frame set before decoding any textures."""
@@ -195,19 +244,10 @@ class Civic360Player(FloatLayout):
 
         if self.reverse_rotation:
             self.frame_paths.reverse()
-
-        try:
-            tracking_by_frame = read_floor_glow_tracking(
-                self.frames_dir / GLOW_TRACKING_FILENAME
-            )
-            self.glow_tracking = [
-                tracking_by_frame[path.name]
-                for path in self.frame_paths
-            ]
-        except (KeyError, OSError, TypeError, ValueError) as error:
-            self.glow_enabled = False
-            self.floor_glow.opacity = 0
-            print(f"Civic glow tracking disabled: {error}")
+        self.frame_source_indices = [
+            int(path.stem.rsplit("_", 1)[-1])
+            for path in self.frame_paths
+        ]
 
         try:
             first_texture = self.load_texture(self.frame_paths[0])
@@ -274,12 +314,9 @@ class Civic360Player(FloatLayout):
                 * (3.0 - 2.0 * fade_progress)
             )
 
+        self.current_reveal_opacity = reveal_opacity
         self.car_image.opacity = reveal_opacity
-        self.floor_glow.opacity = (
-            reveal_opacity * self.glow_opacity
-            if self.glow_enabled
-            else 0.0
-        )
+        self.update_floor_glow_opacity()
 
         progress = (elapsed % self.rotation_seconds) / self.rotation_seconds
         index = int(progress * len(self.textures)) % len(self.textures)

@@ -1,7 +1,13 @@
 import unittest
 from pathlib import Path
 
-from floor_glow import build_floor_glow_rgba, read_floor_glow_tracking
+from floor_glow import (
+    Point,
+    build_floor_glow_rgba,
+    glow_strip_corners,
+    projected_edge_strengths,
+    projected_floor_corners,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -32,39 +38,52 @@ class FloorGlowTest(unittest.TestCase):
         self.assertIn('    / "civic_frames_outline"', player_source)
         self.assertNotIn('    / "civic_frames_bottom_glow"', player_source)
 
-    def test_tracking_covers_the_complete_rotation_smoothly(self):
-        tracking_path = (
-            PROJECT
-            / "assets"
-            / "civic_frames_outline"
-            / "floor_glow_tracking.tsv"
-        )
-        tracking = read_floor_glow_tracking(tracking_path)
-        names = [f"frame_{index:04d}.png" for index in range(220)]
-        self.assertEqual(list(tracking), names)
+    def test_projected_frame_rotates_instead_of_resizing_one_bar(self):
+        rear = projected_floor_corners(0)
+        diagonal = projected_floor_corners(27)
+        side = projected_floor_corners(55)
 
-        geometry = [tracking[name] for name in names]
+        self.assertAlmostEqual(rear[1].y, rear[2].y, places=6)
+        self.assertGreater(rear[2].x - rear[1].x, 210.0)
 
-        def largest_loop_step(values):
-            return max(
-                abs(values[(index + 1) % len(values)] - values[index])
-                for index in range(len(values))
-            )
+        diagonal_side_x = diagonal[1].x - diagonal[0].x
+        diagonal_side_y = diagonal[1].y - diagonal[0].y
+        self.assertGreater(abs(diagonal_side_x), 230.0)
+        self.assertGreater(abs(diagonal_side_y), 60.0)
 
-        self.assertLess(
-            largest_loop_step([item.center_x for item in geometry]),
-            5.0,
-        )
-        self.assertLess(
-            largest_loop_step([item.center_y for item in geometry]),
-            1.5,
-        )
-        self.assertLess(
-            largest_loop_step([item.width for item in geometry]),
-            7.0,
-        )
-        self.assertGreater(max(item.center_x for item in geometry), 318.0)
-        self.assertLess(min(item.center_x for item in geometry), 263.0)
+        self.assertAlmostEqual(side[0].y, side[1].y, places=6)
+        self.assertGreater(side[1].x - side[0].x, 350.0)
+
+    def test_projected_loop_has_no_frame_zero_jump(self):
+        frames = [projected_floor_corners(index) for index in range(220)]
+        largest_step = 0.0
+        for index, current in enumerate(frames):
+            following = frames[(index + 1) % len(frames)]
+            for current_point, following_point in zip(current, following):
+                largest_step = max(
+                    largest_step,
+                    abs(following_point.x - current_point.x),
+                    abs(following_point.y - current_point.y),
+                )
+        self.assertLess(largest_step, 6.0)
+
+    def test_closest_facing_edge_is_brightest(self):
+        rear = projected_floor_corners(0)
+        rear_strengths = projected_edge_strengths(0, rear)
+        self.assertEqual(rear_strengths[1], max(rear_strengths))
+        self.assertGreater(rear_strengths[1], 0.95)
+        self.assertLess(rear_strengths[3], 0.1)
+
+        side = projected_floor_corners(55)
+        side_strengths = projected_edge_strengths(55, side)
+        self.assertEqual(side_strengths[0], max(side_strengths))
+        self.assertGreater(side_strengths[0], 0.95)
+
+    def test_strip_is_built_around_a_diagonal_edge(self):
+        strip = glow_strip_corners(Point(10, 20), Point(110, 70), 20)
+        self.assertEqual(len(strip), 4)
+        self.assertNotEqual(strip[0].y, strip[1].y)
+        self.assertNotEqual(strip[0].x, strip[3].x)
 
 
 if __name__ == "__main__":
