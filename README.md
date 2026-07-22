@@ -149,12 +149,12 @@ The disabled entry is renamed with a timestamp instead of being deleted.
 
 ## Fast kiosk startup without showing the desktop
 
-Recent Raspberry Pi OS releases use the labwc Wayland desktop. Cyberdash can
-replace that session's normal panel and desktop startup so the visible sequence
-is the Raspberry Pi splash, a black screen, and then the dashboard. This keeps
-the working graphical display and dual-HDMI configuration while avoiding the
-desktop flash. The launcher has no delay by default, and the mouse pointer is
-hidden in fullscreen mode.
+The installer detects both current labwc sessions and older Raspberry Pi
+LXDE/Openbox sessions. Cyberdash replaces that session's normal panel and
+desktop startup so the visible sequence is the Raspberry Pi splash, a black
+screen, and then the dashboard. This keeps the working graphical display and
+dual-HDMI configuration while avoiding the desktop flash. The launcher has no
+delay by default, and the mouse pointer is hidden in fullscreen mode.
 
 First confirm that V2 works fullscreen and that the small display is configured
 as the primary display. Then install the reversible kiosk startup:
@@ -198,9 +198,9 @@ cd ~/Desktop/cyberdash_red
 sudo reboot
 ```
 
-The installer backs up an existing labwc autostart file and the normal
-Cyberdash desktop-autostart entry. The disable script restores both and keeps
-the generated kiosk files in a timestamped recovery folder.
+The installer backs up the detected labwc or `LXDE-pi` session autostart file
+and the normal Cyberdash desktop-autostart entry. The disable script restores
+both and keeps the generated kiosk files in a timestamped recovery folder.
 
 ## Test the two BME280 sensors
 
