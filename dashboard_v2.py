@@ -2,8 +2,9 @@
 """Cyberdash Red Kivy dashboard v2.
 
 The dashboard foundation remains a conversation-derived reconstruction rather
-than a byte-for-byte copy recovered from the Raspberry Pi. V2 replaces only
-the temporary Civic drawing with the approved transparent 220-frame player.
+than a byte-for-byte copy recovered from the Raspberry Pi. This revision uses
+the approved structured red/white telemetry layout and transparent 220-frame
+Civic player.
 The 480-pixel-tall design adapts from 640 to 854 pixels wide before scaling,
 so common Pi and HDMI displays are filled without stretching the artwork.
 The audio visualizer remains explicitly simulated.
@@ -40,6 +41,7 @@ from kivy.core.window import Window
 from kivy.graphics import (
     Color,
     Line,
+    Mesh,
     PopMatrix,
     PushMatrix,
     Rectangle,
@@ -54,6 +56,12 @@ from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
 from civic_360_widget import Civic360Player, ROTATION_SECONDS
+from dashboard_theme import (
+    active_temperature_segments,
+    clipped_outline_points,
+    dashboard_panels,
+    visualizer_row_color,
+)
 from display_layout import (
     DESIGN_HEIGHT,
     DESIGN_WIDTH,
@@ -64,12 +72,12 @@ from display_layout import (
 
 
 BACKGROUND = (0.025, 0.025, 0.03, 1)
-PANEL = (0.055, 0.055, 0.065, 1)
+PANEL = (0.035, 0.035, 0.043, 1)
 WHITE = (0.96, 0.96, 0.98, 1)
 LIGHT_GREY = (0.65, 0.65, 0.70, 1)
-DARK_GREY = (0.18, 0.18, 0.21, 1)
 RED = (0.92, 0.025, 0.045, 1)
-DARK_RED = (0.35, 0.015, 0.025, 1)
+BORDER_GREY = (0.30, 0.30, 0.33, 1)
+INACTIVE_RED = (0.12, 0.012, 0.022, 1)
 
 # Set this as soon as the Window exists so the initial buffer is black instead
 # of briefly flashing white while the dashboard and Civic textures load.
@@ -102,127 +110,182 @@ def fixed_label(
 
 
 class RacingPanel(Widget):
-    """Dark panel with red racing-style edge accents."""
+    """Dark clipped panel with restrained racing-red corner accents."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         with self.canvas:
             Color(*PANEL)
-            self.panel_background = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[dp(8)]
+            self.panel_background = Mesh(
+                vertices=[],
+                indices=list(range(8)),
+                mode="triangle_fan",
             )
-            Color(*DARK_GREY)
-            self.panel_border = Line(
-                rounded_rectangle=(
-                    self.x,
-                    self.y,
-                    self.width,
-                    self.height,
-                    dp(8),
-                ),
-                width=1.1,
-            )
+            Color(*BORDER_GREY)
+            self.panel_border = Line(points=[], close=True, width=1.0)
             Color(*RED)
-            self.red_top_line = Line(points=[], width=1.5)
-            self.corner_top = Line(points=[], width=2.2)
-            self.corner_bottom = Line(points=[], width=2.2)
+            self.corner_top = Line(points=[], width=2.0)
+            self.corner_bottom = Line(points=[], width=2.0)
         self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.update_canvas()
 
     def update_canvas(self, *_):
-        self.panel_background.pos = self.pos
-        self.panel_background.size = self.size
-        self.panel_border.rounded_rectangle = (
+        cut = dp(8)
+        points = clipped_outline_points(
             self.x,
             self.y,
             self.width,
             self.height,
-            dp(8),
+            cut,
         )
-        self.red_top_line.points = [
-            self.x + dp(12),
-            self.top - dp(10),
-            self.right - dp(12),
-            self.top - dp(10),
-        ]
-        corner = dp(17)
+        vertices = []
+        for index in range(0, len(points), 2):
+            vertices.extend((points[index], points[index + 1], 0.0, 0.0))
+        self.panel_background.vertices = vertices
+        self.panel_border.points = list(points)
         self.corner_top.points = [
             self.x,
-            self.top - corner,
-            self.x,
+            self.top - cut,
+            self.x + cut,
             self.top,
-            self.x + corner,
+            self.x + dp(26),
             self.top,
         ]
         self.corner_bottom.points = [
-            self.right - corner,
+            self.right - dp(26),
+            self.y,
+            self.right - cut,
             self.y,
             self.right,
-            self.y,
-            self.right,
-            self.y + corner,
+            self.y + cut,
         ]
 
 
-class TemperatureBar(Widget):
-    temperature = NumericProperty(0.0)
+class ThermometerIcon(Widget):
+    """Compact red outline thermometer used by both climate rows."""
 
-    def __init__(self, minimum=-20, maximum=50, **kwargs):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas:
+            Color(*RED)
+            self.bulb = Line(circle=(0, 0, 1), width=1.6)
+            self.stem = Line(points=[], width=1.6)
+            self.mercury = Line(points=[], width=2.0)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.update_canvas()
+
+    def update_canvas(self, *_):
+        center_x = self.center_x
+        bulb_y = self.y + dp(7)
+        radius = min(dp(5), self.width * 0.24)
+        stem_half = radius * 0.58
+        stem_top = self.top - dp(3)
+        self.bulb.circle = (center_x, bulb_y, radius)
+        self.stem.points = [
+            center_x - stem_half,
+            bulb_y + radius * 0.7,
+            center_x - stem_half,
+            stem_top,
+            center_x + stem_half,
+            stem_top,
+            center_x + stem_half,
+            bulb_y + radius * 0.7,
+        ]
+        self.mercury.points = [center_x, bulb_y, center_x, stem_top - dp(3)]
+
+
+class SegmentedTemperatureBar(Widget):
+    temperature = NumericProperty(-20.0)
+
+    def __init__(
+        self,
+        minimum=-20,
+        maximum=50,
+        segment_count=10,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.minimum = minimum
         self.maximum = maximum
+        self.segment_count = segment_count
+        self.temperature = minimum
+        self.segment_colors = []
+        self.segments = []
         with self.canvas:
-            Color(*DARK_GREY)
-            self.track = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[dp(4)]
-            )
-            Color(*RED)
-            self.fill = RoundedRectangle(
-                pos=self.pos, size=(0, self.height), radius=[dp(4)]
-            )
-            Color(*WHITE)
-            self.marker = Line(points=[], width=1.0)
+            for _index in range(segment_count):
+                self.segment_colors.append(Color(*INACTIVE_RED))
+                self.segments.append(
+                    RoundedRectangle(pos=self.pos, size=(0, 0), radius=[dp(1)])
+                )
+            Color(*LIGHT_GREY)
+            self.tick_marks = [Line(points=[], width=0.8) for _ in range(5)]
         self.bind(
             pos=self.update_canvas,
             size=self.update_canvas,
             temperature=self.update_canvas,
         )
+        self.update_canvas()
 
     def update_canvas(self, *_):
-        self.track.pos = self.pos
-        self.track.size = self.size
-        value = max(self.minimum, min(self.maximum, self.temperature))
-        ratio = (value - self.minimum) / (self.maximum - self.minimum)
-        fill_width = self.width * ratio
-        self.fill.pos = self.pos
-        self.fill.size = (fill_width, self.height)
-        marker_x = self.x + fill_width
-        self.marker.points = [
-            marker_x,
-            self.y - dp(2),
-            marker_x,
-            self.top + dp(2),
-        ]
+        gap = dp(3)
+        segment_height = max(dp(5), self.height - dp(8))
+        segment_width = max(
+            dp(2),
+            (self.width - gap * (self.segment_count - 1)) / self.segment_count,
+        )
+        active = active_temperature_segments(
+            self.temperature,
+            self.minimum,
+            self.maximum,
+            self.segment_count,
+        )
+        for index, (color, segment) in enumerate(
+            zip(self.segment_colors, self.segments)
+        ):
+            color.rgba = RED if index < active else INACTIVE_RED
+            segment.pos = (
+                self.x + index * (segment_width + gap),
+                self.y + dp(8),
+            )
+            segment.size = (segment_width, segment_height)
+        for index, tick in enumerate(self.tick_marks):
+            tick_x = self.x + self.width * index / 4.0
+            tick.points = [tick_x, self.y, tick_x, self.y + dp(4)]
 
 
 class Visualizer(Widget):
-    """Simulated placeholder; it is not connected to system audio."""
+    """Segmented simulated spectrum with a red-to-white vertical colour map."""
 
-    def __init__(self, bar_count=17, **kwargs):
+    def __init__(self, bar_count=17, row_count=18, **kwargs):
         super().__init__(**kwargs)
         self.bar_count = bar_count
-        self.bar_values = [0.25] * bar_count
-        self.target_values = [0.25] * bar_count
-        self.bars = []
+        self.row_count = row_count
+        self.bar_values = [
+            0.34 + 0.22 * (math.sin(index * 0.92) + 1.0) / 2.0
+            for index in range(bar_count)
+        ]
+        self.target_values = list(self.bar_values)
+        self.segment_colors = []
+        self.segments = []
         with self.canvas:
-            for index in range(bar_count):
-                Color(*(WHITE if index < bar_count * 0.68 else RED))
-                self.bars.append(
-                    RoundedRectangle(
-                        pos=self.pos,
-                        size=(dp(5), dp(10)),
-                        radius=[dp(2)],
+            for _bar_index in range(bar_count):
+                color_column = []
+                segment_column = []
+                for row_index in range(row_count):
+                    color_column.append(
+                        Color(*visualizer_row_color(row_index, row_count))
                     )
-                )
+                    segment_column.append(
+                        RoundedRectangle(
+                            pos=self.pos,
+                            size=(0, 0),
+                            radius=[dp(0.8)],
+                        )
+                    )
+                self.segment_colors.append(color_column)
+                self.segments.append(segment_column)
+            Color(*LIGHT_GREY)
+            self.baseline = Line(points=[], width=0.8)
         self.bind(pos=self.update_canvas, size=self.update_canvas)
         Clock.schedule_interval(self.animate, 1 / 30)
 
@@ -240,18 +303,125 @@ class Visualizer(Widget):
         self.update_canvas()
 
     def update_canvas(self, *_):
-        if not self.bars:
+        if not self.segments:
             return
-        usable_width = self.width * 0.86
-        usable_height = self.height * 0.68
-        left = self.x + self.width * 0.07
-        bottom = self.y + self.height * 0.15
+        usable_width = self.width * 0.92
+        usable_height = self.height * 0.78
+        left = self.x + self.width * 0.04
+        bottom = self.y + self.height * 0.08
         spacing = usable_width / self.bar_count
-        bar_width = spacing * 0.53
-        for index, bar in enumerate(self.bars):
-            bar_height = max(dp(5), usable_height * self.bar_values[index])
-            bar.pos = (left + index * spacing, bottom)
-            bar.size = (bar_width, bar_height)
+        bar_width = spacing * 0.56
+        row_slot = usable_height / self.row_count
+        segment_height = row_slot * 0.62
+        self.baseline.points = [left, bottom - dp(2), left + usable_width, bottom - dp(2)]
+        for bar_index in range(self.bar_count):
+            active_rows = max(
+                1,
+                min(
+                    self.row_count,
+                    round(self.bar_values[bar_index] * self.row_count),
+                ),
+            )
+            for row_index in range(self.row_count):
+                color = self.segment_colors[bar_index][row_index]
+                segment = self.segments[bar_index][row_index]
+                if row_index < active_rows:
+                    color.rgba = visualizer_row_color(row_index, self.row_count)
+                else:
+                    color.rgba = (0.0, 0.0, 0.0, 0.0)
+                segment.pos = (
+                    left + bar_index * spacing,
+                    bottom + row_index * row_slot,
+                )
+                segment.size = (bar_width, segment_height)
+
+
+class HeaderDots(Widget):
+    """Three restrained red system indicators in the command header."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dots = []
+        with self.canvas:
+            Color(*RED)
+            for _index in range(3):
+                self.dots.append(
+                    RoundedRectangle(pos=self.pos, size=(0, 0), radius=[dp(4)])
+                )
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.update_canvas()
+
+    def update_canvas(self, *_):
+        diameter = dp(6)
+        spacing = dp(15)
+        start_x = self.center_x - spacing
+        for index, dot in enumerate(self.dots):
+            dot.pos = (
+                start_x + index * spacing - diameter / 2.0,
+                self.center_y - diameter / 2.0,
+            )
+            dot.size = (diameter, diameter)
+
+
+class AccentDivider(Widget):
+    """Thin time-panel divider with small red racing markers."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas:
+            Color(*BORDER_GREY)
+            self.line = Line(points=[], width=0.8)
+            Color(*RED)
+            self.left_mark = Line(points=[], width=1.8)
+            self.center_mark = Line(points=[], width=1.8)
+            self.right_mark = Line(points=[], width=1.8)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.update_canvas()
+
+    def update_canvas(self, *_):
+        center_y = self.center_y
+        self.line.points = [self.x, center_y, self.right, center_y]
+        self.left_mark.points = [
+            self.x + dp(18),
+            center_y - dp(3),
+            self.x + dp(18),
+            center_y + dp(3),
+        ]
+        self.center_mark.points = [
+            self.center_x - dp(5),
+            center_y,
+            self.center_x + dp(5),
+            center_y,
+        ]
+        self.right_mark.points = [
+            self.right - dp(18),
+            center_y - dp(3),
+            self.right - dp(18),
+            center_y + dp(3),
+        ]
+
+
+class OutlinedChip(Widget):
+    """Small clipped status-chip outline used by the vehicle module."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas:
+            Color(*BORDER_GREY)
+            self.outline = Line(points=[], close=True, width=0.8)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.update_canvas()
+
+    def update_canvas(self, *_):
+        self.outline.points = list(
+            clipped_outline_points(
+                self.x,
+                self.y,
+                self.width,
+                self.height,
+                dp(4),
+            )
+        )
 
 
 class Dashboard(FloatLayout):
@@ -283,38 +453,76 @@ class Dashboard(FloatLayout):
         with self.canvas.before:
             Color(*BACKGROUND)
             self.background_rectangle = Rectangle(pos=self.pos, size=self.size)
-            Color(*DARK_RED)
-            self.background_lines = [Line(points=[], width=0.65) for _ in range(9)]
+            Color(*BORDER_GREY)
+            self.outer_border = Line(points=[], close=True, width=0.8)
+            self.header_separator = Line(points=[], width=0.8)
+            Color(*RED)
+            self.outer_top_corner = Line(points=[], width=2.0)
+            self.outer_bottom_corner = Line(points=[], width=2.0)
         self.bind(pos=self.update_background, size=self.update_background)
 
     def update_background(self, *_):
         self.background_rectangle.pos = self.pos
         self.background_rectangle.size = self.size
-        for index, line in enumerate(self.background_lines):
-            y = self.y + index * self.height / 8
-            line.points = [self.x, y, self.right, y + self.height * 0.08]
+        inset = dp(5)
+        cut = dp(10)
+        self.outer_border.points = list(
+            clipped_outline_points(
+                self.x + inset,
+                self.y + inset,
+                self.width - inset * 2,
+                self.height - inset * 2,
+                cut,
+            )
+        )
+        layout = dashboard_panels(self.design_width, DESIGN_HEIGHT)
+        separator_y = self.y + layout.header_y - dp(3)
+        self.header_separator.points = [
+            self.x + dp(8),
+            separator_y,
+            self.right - dp(8),
+            separator_y,
+        ]
+        self.outer_top_corner.points = [
+            self.x + inset,
+            self.top - inset - cut,
+            self.x + inset + cut,
+            self.top - inset,
+            self.x + inset + dp(38),
+            self.top - inset,
+        ]
+        self.outer_bottom_corner.points = [
+            self.right - inset - dp(38),
+            self.y + inset,
+            self.right - inset - cut,
+            self.y + inset,
+            self.right - inset,
+            self.y + inset + cut,
+        ]
 
     def create_panels(self):
-        margin, gap, header_height = dp(10), dp(8), dp(26)
-        usable_width = self.design_width - margin * 2
-        usable_height = DESIGN_HEIGHT - margin * 2 - header_height
-        column_width = (usable_width - gap) / 2
-        row_height = (usable_height - gap) / 2
-        top_y = DESIGN_HEIGHT - margin - header_height - row_height
+        layout = dashboard_panels(self.design_width, DESIGN_HEIGHT)
+        self.panel_layout = layout
 
         self.top_left_panel = RacingPanel(
-            pos=(margin, top_y), size=(column_width, row_height)
+            size_hint=(None, None),
+            pos=(layout.top_left.x, layout.top_left.y),
+            size=(layout.top_left.width, layout.top_left.height),
         )
         self.top_right_panel = RacingPanel(
-            pos=(margin + column_width + gap, top_y),
-            size=(column_width, row_height),
+            size_hint=(None, None),
+            pos=(layout.top_right.x, layout.top_right.y),
+            size=(layout.top_right.width, layout.top_right.height),
         )
         self.bottom_left_panel = RacingPanel(
-            pos=(margin, margin), size=(column_width, row_height)
+            size_hint=(None, None),
+            pos=(layout.bottom_left.x, layout.bottom_left.y),
+            size=(layout.bottom_left.width, layout.bottom_left.height),
         )
         self.bottom_right_panel = RacingPanel(
-            pos=(margin + column_width + gap, margin),
-            size=(column_width, row_height),
+            size_hint=(None, None),
+            pos=(layout.bottom_right.x, layout.bottom_right.y),
+            size=(layout.bottom_right.width, layout.bottom_right.height),
         )
         for panel in (
             self.top_left_panel,
@@ -326,22 +534,32 @@ class Dashboard(FloatLayout):
 
         self.add_widget(
             fixed_label(
-                "[b]CIVIC // DRIVER INTERFACE[/b]",
-                (margin, DESIGN_HEIGHT - margin - header_height),
-                (dp(280), header_height),
-                13,
+                "[b]CIVIC [color=ff1c2b]//[/color] DRIVER INTERFACE[/b]",
+                (layout.top_left.x + dp(12), layout.header_y + dp(4)),
+                (dp(300), layout.header_height - dp(8)),
+                14,
                 halign="left",
                 markup=True,
             )
         )
         self.add_widget(
-            fixed_label(
-                "[color=ff0a16]●[/color] SYSTEM ONLINE",
-                (
-                    self.design_width - margin - dp(190),
-                    DESIGN_HEIGHT - margin - header_height,
+            HeaderDots(
+                size_hint=(None, None),
+                size=(dp(66), layout.header_height - dp(8)),
+                pos=(
+                    self.design_width / 2 - dp(33),
+                    layout.header_y + dp(4),
                 ),
-                (dp(190), header_height),
+            )
+        )
+        self.add_widget(
+            fixed_label(
+                "[color=ff1c2b]▮[/color] SYSTEM ONLINE",
+                (
+                    self.design_width - dp(212),
+                    layout.header_y + dp(4),
+                ),
+                (dp(190), layout.header_height - dp(8)),
                 10,
                 color=LIGHT_GREY,
                 halign="right",
@@ -352,10 +570,10 @@ class Dashboard(FloatLayout):
     def panel_title(self, panel, text, reserve_end=0):
         self.add_widget(
             fixed_label(
-                f"[color=ff0a16]{text}[/color]",
-                (panel.x + dp(12), panel.top - dp(39)),
-                (panel.width - dp(24) - dp(reserve_end), dp(22)),
-                11,
+                f"[b][color=ff1c2b]{text}[/color][/b]",
+                (panel.x + dp(18), panel.top - dp(39)),
+                (panel.width - dp(36) - dp(reserve_end), dp(24)),
+                13,
                 halign="left",
                 markup=True,
             )
@@ -366,22 +584,29 @@ class Dashboard(FloatLayout):
         self.panel_title(panel, "TIME / DATE")
         self.time_label = fixed_label(
             "00:00",
-            (panel.x + dp(12), panel.y + dp(60)),
-            (panel.width - dp(24), dp(72)),
-            54,
+            (panel.x + dp(22), panel.y + dp(76)),
+            (panel.width - dp(94), dp(70)),
+            60,
         )
         self.seconds_label = fixed_label(
             "00",
-            (panel.right - dp(51), panel.y + dp(71)),
-            (dp(38), dp(24)),
-            15,
+            (panel.right - dp(64), panel.y + dp(89)),
+            (dp(44), dp(28)),
+            20,
             color=RED,
+        )
+        self.add_widget(
+            AccentDivider(
+                size_hint=(None, None),
+                size=(panel.width - dp(36), dp(8)),
+                pos=(panel.x + dp(18), panel.y + dp(61)),
+            )
         )
         self.date_label = fixed_label(
             "MONDAY 01 JANUARY 2026",
-            (panel.x + dp(12), panel.y + dp(26)),
-            (panel.width - dp(24), dp(30)),
-            12,
+            (panel.x + dp(18), panel.y + dp(25)),
+            (panel.width - dp(36), dp(30)),
+            13,
             color=LIGHT_GREY,
         )
         for label in (self.time_label, self.seconds_label, self.date_label):
@@ -392,96 +617,129 @@ class Dashboard(FloatLayout):
         self.panel_title(panel, "CLIMATE MONITOR", reserve_end=125)
         self.temperature_status_label = fixed_label(
             "CONNECTING",
-            (panel.right - dp(132), panel.top - dp(39)),
-            (dp(120), dp(22)),
+            (panel.right - dp(138), panel.top - dp(39)),
+            (dp(120), dp(24)),
             8,
             color=LIGHT_GREY,
             halign="right",
         )
         self.add_widget(self.temperature_status_label)
         self.add_widget(
+            ThermometerIcon(
+                size_hint=(None, None),
+                size=(dp(28), dp(38)),
+                pos=(panel.x + dp(14), panel.y + dp(100)),
+            )
+        )
+        self.add_widget(
             fixed_label(
                 "INSIDE",
-                (panel.x + dp(16), panel.y + dp(111)),
+                (panel.x + dp(48), panel.y + dp(111)),
                 (dp(90), dp(24)),
-                11,
+                12,
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.inside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(121), panel.y + dp(101)),
-            (dp(105), dp(43)),
-            30,
+            (panel.right - dp(102), panel.y + dp(104)),
+            (dp(84), dp(38)),
+            27,
             halign="right",
         )
         self.add_widget(self.inside_value_label)
-        self.inside_bar = TemperatureBar(
+        self.inside_bar = SegmentedTemperatureBar(
             minimum=-20,
             maximum=50,
+            segment_count=10,
             size_hint=(None, None),
-            size=(panel.width - dp(32), dp(10)),
-            pos=(panel.x + dp(16), panel.y + dp(92)),
+            size=(panel.width - dp(70), dp(18)),
+            pos=(panel.x + dp(52), panel.y + dp(78)),
         )
         self.add_widget(self.inside_bar)
 
         self.add_widget(
+            ThermometerIcon(
+                size_hint=(None, None),
+                size=(dp(28), dp(38)),
+                pos=(panel.x + dp(14), panel.y + dp(40)),
+            )
+        )
+        self.add_widget(
             fixed_label(
                 "OUTSIDE",
-                (panel.x + dp(16), panel.y + dp(51)),
+                (panel.x + dp(48), panel.y + dp(51)),
                 (dp(90), dp(24)),
-                11,
+                12,
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.outside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(121), panel.y + dp(41)),
-            (dp(105), dp(43)),
-            30,
+            (panel.right - dp(102), panel.y + dp(44)),
+            (dp(84), dp(38)),
+            27,
             halign="right",
         )
         self.add_widget(self.outside_value_label)
-        self.outside_bar = TemperatureBar(
+        self.outside_bar = SegmentedTemperatureBar(
             minimum=-20,
             maximum=50,
+            segment_count=10,
             size_hint=(None, None),
-            size=(panel.width - dp(32), dp(10)),
-            pos=(panel.x + dp(16), panel.y + dp(32)),
+            size=(panel.width - dp(70), dp(18)),
+            pos=(panel.x + dp(52), panel.y + dp(18)),
         )
         self.add_widget(self.outside_bar)
 
     def create_vehicle_panel(self):
         panel = self.bottom_left_panel
-        self.panel_title(panel, "VEHICLE PROFILE")
+        self.panel_title(panel, "VEHICLE PROFILE", reserve_end=92)
+        self.add_widget(
+            OutlinedChip(
+                size_hint=(None, None),
+                size=(dp(74), dp(22)),
+                pos=(panel.right - dp(88), panel.top - dp(39)),
+            )
+        )
+        self.add_widget(
+            fixed_label(
+                "360 [color=ff1c2b]LIVE[/color]",
+                (panel.right - dp(88), panel.top - dp(39)),
+                (dp(74), dp(22)),
+                9,
+                color=LIGHT_GREY,
+                markup=True,
+            )
+        )
         self.civic_player = Civic360Player(
             rotation_seconds=ROTATION_SECONDS,
             reverse_rotation=False,
             size_hint=(None, None),
-            size=(panel.width - dp(24), panel.height - dp(55)),
-            pos=(panel.x + dp(12), panel.y + dp(25)),
+            size=(panel.width - dp(20), panel.height - dp(56)),
+            pos=(panel.x + dp(10), panel.y + dp(23)),
         )
         self.add_widget(self.civic_player)
         self.add_widget(
             fixed_label(
-                "[b]HONDA CIVIC EJ9 // B16A2[/b]",
-                (panel.x + dp(15), panel.y + dp(5)),
+                "[b]HONDA CIVIC EG9  //  [color=ff1c2b]B16A2[/color][/b]",
+                (panel.x + dp(15), panel.y + dp(4)),
                 (panel.width - dp(30), dp(22)),
-                10,
+                9,
                 markup=True,
             )
         )
 
     def create_visualizer_panel(self):
         panel = self.bottom_right_panel
-        self.panel_title(panel, "AUDIO VISUALIZER", reserve_end=90)
+        self.panel_title(panel, "AUDIO VISUALIZER", reserve_end=112)
         self.add_widget(
             fixed_label(
-                "SIMULATED",
-                (panel.right - dp(92), panel.top - dp(39)),
-                (dp(80), dp(22)),
+                "SIMULATED INPUT",
+                (panel.right - dp(122), panel.top - dp(39)),
+                (dp(104), dp(24)),
                 8,
                 color=LIGHT_GREY,
                 halign="right",
@@ -490,9 +748,10 @@ class Dashboard(FloatLayout):
         self.add_widget(
             Visualizer(
                 bar_count=17,
+                row_count=18,
                 size_hint=(None, None),
-                size=(panel.width - dp(24), panel.height - dp(48)),
-                pos=(panel.x + dp(12), panel.y + dp(6)),
+                size=(panel.width - dp(24), panel.height - dp(50)),
+                pos=(panel.x + dp(12), panel.y + dp(7)),
             )
         )
 

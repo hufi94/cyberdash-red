@@ -1,9 +1,20 @@
 # Cyberdash Red — Raspberry Pi Civic Dashboard
 
-This is the fresh Kivy dashboard package for the Raspberry Pi 5. Its layout
-adapts to 640×480, 800×480 and widescreen displays without stretching the
-Civic. It includes the approved rotating Honda Civic EJ9 artwork directly in
-the repository, so the Pi does not need to convert or copy any car frames.
+This is the fresh Kivy dashboard package for the Raspberry Pi 5. Its structured
+red/white telemetry layout adapts to 640×480, 800×480 and widescreen displays
+without stretching the Civic. It includes the approved rotating Honda Civic
+artwork directly in the repository, so the Pi does not need to convert or copy
+any car frames.
+
+## Approved telemetry layout
+
+- clipped-corner four-panel frame with restrained red racing accents
+- large time and date module with a technical divider
+- inside/outside climate rows with thermometer icons and red segmented gauges
+- rotating Civic module labelled `HONDA CIVIC EG9 // B16A2` with `360 LIVE`
+- simulated segmented audio spectrum with solid red baseline segments that
+  progress through coral and pale red to white at full height
+- no continuous gray climate tracks and no diagonal background clutter
 
 ## Approved Civic animation
 
@@ -228,6 +239,7 @@ python -m py_compile \
     floor_glow.py \
     civic_360_widget.py \
     civic_360_test.py \
+    dashboard_theme.py \
     dashboard_v2.py \
     sensor_test.py
 ```
