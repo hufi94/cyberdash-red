@@ -14,7 +14,17 @@ if [[ ! -x "${python_path}" ]]; then
     exit 1
 fi
 
-sleep "${CYBERDASH_START_DELAY:-2}"
+start_delay="${CYBERDASH_START_DELAY:-0}"
+if [[ ! "${start_delay}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    printf 'Invalid CYBERDASH_START_DELAY: %s\n' "${start_delay}" \
+        >> "${log_file}"
+    exit 1
+fi
+
+if [[ "${start_delay}" != "0" ]]; then
+    sleep "${start_delay}"
+fi
+
 cd "${project_dir}"
 export KIVY_NO_ARGS=1
 export PYTHONUNBUFFERED=1
