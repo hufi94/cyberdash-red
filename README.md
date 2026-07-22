@@ -103,9 +103,10 @@ Press **Esc** to close it. V2 starts fullscreen by default. It keeps the layout
 
 A three-pixel screen inset keeps the accents clear of the physical display
 edge while using more of the 3.5-inch panel. At 640×480, the interface applies
-a restrained eight-percent typography boost, tighter seven-pixel panel margins,
-and larger Civic and visualizer viewports. Wider HDMI displays keep the original
-spacing and typography scale.
+a sixteen-percent typography boost plus a twenty-four-percent boost for the
+clock and temperature numbers, tighter seven-pixel panel margins, and larger
+Civic and visualizer viewports. Wider HDMI displays keep the original spacing
+and typography scale.
 
 To test it in a normal resizable window instead, run:
 
