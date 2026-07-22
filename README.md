@@ -40,6 +40,8 @@ The full motion preview is available here:
 
 - `civic_360_test.py` — tests only the approved Civic animation
 - `dashboard_v2.py` — runs the responsive fullscreen dashboard
+- `startup_loader.py` — fades and pulses the SiR emblem while V2 loads
+- `assets/startup/sir_loader_logo.png` — transparent 520×96 loader emblem
 - `sensor_test.py` — tests both BME280 sensors in the terminal
 - `civic_360_widget.py` — reusable player used by both Kivy programs
 - `start_dashboard.sh` — launches V2 without opening a Terminal window
@@ -53,6 +55,20 @@ The full motion preview is available here:
 `dashboard_v2.py` reads the inside BME280 at `0x77` and the outside BME280 at
 `0x76`. Sensor connection errors are shown on screen without stopping the
 dashboard. The audio visualizer is still a simulated placeholder.
+
+## SiR startup loader
+
+The dashboard and Civic textures begin loading behind a completely black
+startup overlay. The SiR emblem fades in, grows gently into position, and
+uses a restrained red breathing pulse until Civic rotation is ready. It then
+fades away to reveal the already-running dashboard, so there is no second
+window, white frame, or desktop flash between the loader and V2.
+
+The loader stays visible for at least `2.4` seconds. It normally closes as
+soon as all 220 Civic frames are decoded; a `12`-second safety limit prevents
+a damaged frame set from trapping the display on the emblem. These values,
+along with the fade and pulse speeds, are grouped at the top of
+`startup_loader.py`.
 
 ## Install safely on the Raspberry Pi
 
