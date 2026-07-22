@@ -2,7 +2,7 @@
 """Texture and perspective helpers for the Civic floor reflection."""
 
 from dataclasses import dataclass
-from math import cos, hypot, pi, pow, sin
+from math import asin, cos, hypot, pi, pow, sin
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,12 @@ def projected_edge_strengths(
     frame_index: int,
     corners: tuple[Point, Point, Point, Point],
     frame_count: int = FLOOR_FRAME_COUNT,
+    fade_extension_fraction: float = 0.0,
 ) -> tuple[float, float, float, float]:
-    """Favor the closest, correctly facing sides of the projected frame."""
+    """Favor the closest sides and extend their angular fade when requested."""
+
+    if fade_extension_fraction < 0:
+        raise ValueError("fade_extension_fraction cannot be negative")
 
     phase = rotation_phase(frame_index, frame_count)
     midpoints_y = [
@@ -86,11 +90,22 @@ def projected_edge_strengths(
     # Edges 0 and 2 are the two vehicle sides. Edges 1 and 3 are its front
     # and rear. This makes the glow visibly rotate instead of behaving like a
     # horizontal bar that merely changes width.
-    facing = (
+    base_facing = (
         abs(sin(phase)),
         abs(cos(phase)),
         abs(sin(phase)),
         abs(cos(phase)),
+    )
+    # Shift each fade curve outward on both sides. One second of a twelve-
+    # second rotation is 1/12 of a turn, making the edge begin brightening one
+    # second earlier and remain visible one second later.
+    phase_extension = min(
+        pi / 2.0,
+        2.0 * pi * fade_extension_fraction,
+    )
+    facing = tuple(
+        sin(min(pi / 2.0, asin(amount) + phase_extension))
+        for amount in base_facing
     )
     strengths = []
     for index, (midpoint_y, facing_amount) in enumerate(

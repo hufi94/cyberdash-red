@@ -87,6 +87,31 @@ class FloorGlowTest(unittest.TestCase):
         self.assertEqual(side_strengths[0], max(side_strengths))
         self.assertGreater(side_strengths[0], 0.95)
 
+    def test_one_second_extension_overlaps_fades_on_both_sides(self):
+        rear = projected_floor_corners(0)
+        baseline = projected_edge_strengths(0, rear)
+        extended = projected_edge_strengths(
+            0,
+            rear,
+            fade_extension_fraction=1.0 / 12.0,
+        )
+
+        # The front/rear-facing edge stays at full strength while both side
+        # fades have already begun one second before their old boundary and
+        # remain present one second after it.
+        self.assertAlmostEqual(extended[1], baseline[1], places=6)
+        self.assertGreater(extended[0], baseline[0])
+        self.assertGreater(extended[2], baseline[2])
+
+    def test_negative_fade_extension_is_rejected(self):
+        corners = projected_floor_corners(0)
+        with self.assertRaises(ValueError):
+            projected_edge_strengths(
+                0,
+                corners,
+                fade_extension_fraction=-0.1,
+            )
+
     def test_strip_is_built_around_a_diagonal_edge(self):
         strip = glow_strip_corners(Point(10, 20), Point(110, 70), 20)
         self.assertEqual(len(strip), 4)

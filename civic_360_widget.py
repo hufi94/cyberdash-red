@@ -38,6 +38,7 @@ FRAME_DIRECTORY = (
 # index as the Civic, so it cannot advance on a separate timer or path.
 GLOW_ENABLED = True
 GLOW_OPACITY = 1.0
+GLOW_FADE_EXTENSION_SECONDS = 1.0
 GLOW_TEXTURE_SIZE = (256, 64)
 FRAME_PIXEL_SIZE = (576.0, 264.0)
 
@@ -62,6 +63,7 @@ class Civic360Player(FloatLayout):
         reverse_rotation: bool = False,
         glow_enabled: bool = GLOW_ENABLED,
         glow_opacity: float = GLOW_OPACITY,
+        glow_fade_extension_seconds: float = GLOW_FADE_EXTENSION_SECONDS,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -71,6 +73,10 @@ class Civic360Player(FloatLayout):
         self.reverse_rotation = reverse_rotation
         self.glow_enabled = glow_enabled
         self.glow_opacity = max(0.0, min(1.0, glow_opacity))
+        self.glow_fade_extension_seconds = max(
+            0.0,
+            glow_fade_extension_seconds,
+        )
         self.frame_paths: list[Path] = []
         self.frame_source_indices: list[int] = []
         self.textures = []
@@ -175,6 +181,11 @@ class Civic360Player(FloatLayout):
         self.glow_edge_strengths = projected_edge_strengths(
             source_index,
             source_corners,
+            fade_extension_fraction=(
+                self.glow_fade_extension_seconds / self.rotation_seconds
+                if self.rotation_seconds > 0
+                else 0.0
+            ),
         )
         mapped_corners = tuple(
             Point(
