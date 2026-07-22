@@ -30,6 +30,10 @@ class DashboardPanels:
     header_height: float
 
 
+COMPACT_WIDTH_LIMIT = 680.0
+COMPACT_UI_SCALE = 1.08
+
+
 def dashboard_panels(
     design_width: float,
     design_height: float = 480.0,
@@ -56,6 +60,31 @@ def dashboard_panels(
         header_y=design_height - margin - header_height,
         header_height=header_height,
     )
+
+
+def responsive_dashboard_panels(
+    design_width: float,
+    design_height: float = 480.0,
+) -> DashboardPanels:
+    """Use more of the physical area only on compact 640-pixel displays."""
+
+    if design_width <= COMPACT_WIDTH_LIMIT:
+        return dashboard_panels(
+            design_width,
+            design_height,
+            margin=7.0,
+            gap=4.0,
+            header_height=39.0,
+        )
+    return dashboard_panels(design_width, design_height)
+
+
+def dashboard_ui_scale(design_width: float) -> float:
+    """Return a restrained legibility boost for the 3.5-inch display."""
+
+    if design_width <= COMPACT_WIDTH_LIMIT:
+        return COMPACT_UI_SCALE
+    return 1.0
 
 
 def clipped_outline_points(

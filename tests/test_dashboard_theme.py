@@ -4,7 +4,9 @@ from pathlib import Path
 from dashboard_theme import (
     active_temperature_segments,
     clipped_outline_points,
+    dashboard_ui_scale,
     dashboard_panels,
+    responsive_dashboard_panels,
     visualizer_row_color,
 )
 
@@ -33,6 +35,23 @@ class DashboardGeometryTest(unittest.TestCase):
         self.assertGreater(wide.top_left.width, compact.top_left.width)
         self.assertEqual(wide.top_left.height, compact.top_left.height)
         self.assertEqual(wide.bottom_left.height, compact.bottom_left.height)
+
+    def test_compact_display_uses_tighter_panels_and_moderate_ui_boost(self):
+        compact = responsive_dashboard_panels(640, 480)
+
+        self.assertEqual(compact.top_left.x, 7)
+        self.assertEqual(compact.top_right.right, 633)
+        self.assertEqual(compact.top_right.x - compact.top_left.right, 4)
+        self.assertGreater(compact.bottom_left.height, 211)
+        self.assertEqual(dashboard_ui_scale(640), 1.08)
+
+    def test_wide_display_keeps_original_scale_and_spacing(self):
+        wide = responsive_dashboard_panels(853, 480)
+
+        self.assertEqual(wide.top_left.x, 10)
+        self.assertEqual(wide.top_right.right, 843)
+        self.assertEqual(wide.top_right.x - wide.top_left.right, 6)
+        self.assertEqual(dashboard_ui_scale(853), 1.0)
 
     def test_clipped_outline_has_eight_ordered_corners(self):
         points = clipped_outline_points(10, 20, 100, 60, 8)
