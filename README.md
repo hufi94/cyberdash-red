@@ -101,9 +101,11 @@ Press **Esc** to close it. V2 starts fullscreen by default. It keeps the layout
 - 800×480 uses the full wide panel instead of leaving 80-pixel side bars.
 - 16:9 monitors use an 853×480 layout before uniform scaling.
 
-A six-pixel screen inset and ten-pixel panel margin keep the accents clear of
-the physical display edge. Small headings are enlarged, while the time,
-temperatures, Civic and visualizer retain their emphasis.
+A three-pixel screen inset keeps the accents clear of the physical display
+edge while using more of the 3.5-inch panel. At 640×480, the interface applies
+a restrained eight-percent typography boost, tighter seven-pixel panel margins,
+and larger Civic and visualizer viewports. Wider HDMI displays keep the original
+spacing and typography scale.
 
 To test it in a normal resizable window instead, run:
 

@@ -1,6 +1,10 @@
 import unittest
 
-from display_layout import design_width_for_window, fit_design_to_window
+from display_layout import (
+    SAFE_SCREEN_INSET,
+    design_width_for_window,
+    fit_design_to_window,
+)
 
 
 class DisplayLayoutTest(unittest.TestCase):
@@ -38,6 +42,17 @@ class DisplayLayoutTest(unittest.TestCase):
         self.assertAlmostEqual(scale, 0.975)
         self.assertAlmostEqual(offset_x, 10.0)
         self.assertAlmostEqual(offset_y, 6.0)
+
+    def test_runtime_inset_is_tight_for_the_small_physical_screen(self):
+        self.assertEqual(SAFE_SCREEN_INSET, 3)
+        scale, offset_x, offset_y = fit_design_to_window(
+            640,
+            480,
+            safe_inset=SAFE_SCREEN_INSET,
+        )
+        self.assertAlmostEqual(scale, 0.9875)
+        self.assertAlmostEqual(offset_x, 4.0)
+        self.assertAlmostEqual(offset_y, 3.0)
 
 
 if __name__ == "__main__":

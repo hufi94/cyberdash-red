@@ -59,7 +59,8 @@ from civic_360_widget import Civic360Player, ROTATION_SECONDS
 from dashboard_theme import (
     active_temperature_segments,
     clipped_outline_points,
-    dashboard_panels,
+    dashboard_ui_scale,
+    responsive_dashboard_panels,
     visualizer_row_color,
 )
 from display_layout import (
@@ -430,6 +431,12 @@ class Dashboard(FloatLayout):
 
     def __init__(self, design_width=DESIGN_WIDTH, **kwargs):
         self.design_width = design_width
+        self.ui_scale = dashboard_ui_scale(design_width)
+        self.compact_mode = self.ui_scale > 1.0
+        self.panel_layout = responsive_dashboard_panels(
+            design_width,
+            DESIGN_HEIGHT,
+        )
         super().__init__(**kwargs)
         Window.clearcolor = BACKGROUND
         self.inside_sensor = None
@@ -448,6 +455,11 @@ class Dashboard(FloatLayout):
         Clock.schedule_interval(self.update_sensors, 2.0)
         self.update_clock(0)
         self.update_sensors(0)
+
+    def font_size(self, value):
+        """Boost important typography only on the compact Pi display."""
+
+        return value * self.ui_scale
 
     def create_background(self):
         with self.canvas.before:
@@ -475,7 +487,7 @@ class Dashboard(FloatLayout):
                 cut,
             )
         )
-        layout = dashboard_panels(self.design_width, DESIGN_HEIGHT)
+        layout = self.panel_layout
         separator_y = self.y + layout.header_y - dp(3)
         self.header_separator.points = [
             self.x + dp(8),
@@ -501,8 +513,7 @@ class Dashboard(FloatLayout):
         ]
 
     def create_panels(self):
-        layout = dashboard_panels(self.design_width, DESIGN_HEIGHT)
-        self.panel_layout = layout
+        layout = self.panel_layout
 
         self.top_left_panel = RacingPanel(
             size_hint=(None, None),
@@ -537,7 +548,7 @@ class Dashboard(FloatLayout):
                 "[b]CIVIC [color=ff1c2b]//[/color] DRIVER INTERFACE[/b]",
                 (layout.top_left.x + dp(12), layout.header_y + dp(4)),
                 (dp(300), layout.header_height - dp(8)),
-                14,
+                self.font_size(14),
                 halign="left",
                 markup=True,
             )
@@ -560,7 +571,7 @@ class Dashboard(FloatLayout):
                     layout.header_y + dp(4),
                 ),
                 (dp(190), layout.header_height - dp(8)),
-                10,
+                self.font_size(10),
                 color=LIGHT_GREY,
                 halign="right",
                 markup=True,
@@ -568,12 +579,16 @@ class Dashboard(FloatLayout):
         )
 
     def panel_title(self, panel, text, reserve_end=0):
+        side_padding = dp(16 if self.compact_mode else 18)
         self.add_widget(
             fixed_label(
                 f"[b][color=ff1c2b]{text}[/color][/b]",
-                (panel.x + dp(18), panel.top - dp(39)),
-                (panel.width - dp(36) - dp(reserve_end), dp(24)),
-                13,
+                (panel.x + side_padding, panel.top - dp(39)),
+                (
+                    panel.width - side_padding * 2 - dp(reserve_end),
+                    dp(24),
+                ),
+                self.font_size(13),
                 halign="left",
                 markup=True,
             )
@@ -582,31 +597,38 @@ class Dashboard(FloatLayout):
     def create_time_panel(self):
         panel = self.top_left_panel
         self.panel_title(panel, "TIME / DATE")
+        time_left = dp(18 if self.compact_mode else 22)
+        time_width_padding = dp(84 if self.compact_mode else 94)
         self.time_label = fixed_label(
             "00:00",
-            (panel.x + dp(22), panel.y + dp(76)),
-            (panel.width - dp(94), dp(70)),
-            60,
+            (panel.x + time_left, panel.y + dp(76)),
+            (panel.width - time_width_padding, dp(72)),
+            self.font_size(60),
         )
         self.seconds_label = fixed_label(
             "00",
-            (panel.right - dp(64), panel.y + dp(89)),
-            (dp(44), dp(28)),
-            20,
+            (
+                panel.right - dp(61 if self.compact_mode else 64),
+                panel.y + dp(89),
+            ),
+            (dp(44), dp(30)),
+            self.font_size(20),
             color=RED,
         )
+        divider_padding = dp(14 if self.compact_mode else 18)
         self.add_widget(
             AccentDivider(
                 size_hint=(None, None),
-                size=(panel.width - dp(36), dp(8)),
-                pos=(panel.x + dp(18), panel.y + dp(61)),
+                size=(panel.width - divider_padding * 2, dp(8)),
+                pos=(panel.x + divider_padding, panel.y + dp(61)),
             )
         )
+        date_padding = dp(14 if self.compact_mode else 18)
         self.date_label = fixed_label(
             "MONDAY 01 JANUARY 2026",
-            (panel.x + dp(18), panel.y + dp(25)),
-            (panel.width - dp(36), dp(30)),
-            13,
+            (panel.x + date_padding, panel.y + dp(25)),
+            (panel.width - date_padding * 2, dp(30)),
+            self.font_size(13),
             color=LIGHT_GREY,
         )
         for label in (self.time_label, self.seconds_label, self.date_label):
@@ -619,16 +641,19 @@ class Dashboard(FloatLayout):
             "CONNECTING",
             (panel.right - dp(138), panel.top - dp(39)),
             (dp(120), dp(24)),
-            8,
+            self.font_size(8),
             color=LIGHT_GREY,
             halign="right",
         )
         self.add_widget(self.temperature_status_label)
+        icon_width = dp(30 if self.compact_mode else 28)
+        icon_height = dp(42 if self.compact_mode else 38)
+        icon_x = panel.x + dp(12 if self.compact_mode else 14)
         self.add_widget(
             ThermometerIcon(
                 size_hint=(None, None),
-                size=(dp(28), dp(38)),
-                pos=(panel.x + dp(14), panel.y + dp(100)),
+                size=(icon_width, icon_height),
+                pos=(icon_x, panel.y + dp(98 if self.compact_mode else 100)),
             )
         )
         self.add_widget(
@@ -636,34 +661,36 @@ class Dashboard(FloatLayout):
                 "INSIDE",
                 (panel.x + dp(48), panel.y + dp(111)),
                 (dp(90), dp(24)),
-                12,
+                self.font_size(12),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.inside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(102), panel.y + dp(104)),
-            (dp(84), dp(38)),
-            27,
+            (panel.right - dp(104), panel.y + dp(102)),
+            (dp(86), dp(42)),
+            self.font_size(27),
             halign="right",
         )
         self.add_widget(self.inside_value_label)
+        bar_left = dp(46 if self.compact_mode else 52)
+        bar_right = dp(12 if self.compact_mode else 18)
         self.inside_bar = SegmentedTemperatureBar(
             minimum=-20,
             maximum=50,
             segment_count=10,
             size_hint=(None, None),
-            size=(panel.width - dp(70), dp(18)),
-            pos=(panel.x + dp(52), panel.y + dp(78)),
+            size=(panel.width - bar_left - bar_right, dp(20)),
+            pos=(panel.x + bar_left, panel.y + dp(77)),
         )
         self.add_widget(self.inside_bar)
 
         self.add_widget(
             ThermometerIcon(
                 size_hint=(None, None),
-                size=(dp(28), dp(38)),
-                pos=(panel.x + dp(14), panel.y + dp(40)),
+                size=(icon_width, icon_height),
+                pos=(icon_x, panel.y + dp(38 if self.compact_mode else 40)),
             )
         )
         self.add_widget(
@@ -671,16 +698,16 @@ class Dashboard(FloatLayout):
                 "OUTSIDE",
                 (panel.x + dp(48), panel.y + dp(51)),
                 (dp(90), dp(24)),
-                12,
+                self.font_size(12),
                 color=LIGHT_GREY,
                 halign="left",
             )
         )
         self.outside_value_label = fixed_label(
             "--.-°",
-            (panel.right - dp(102), panel.y + dp(44)),
-            (dp(84), dp(38)),
-            27,
+            (panel.right - dp(104), panel.y + dp(42)),
+            (dp(86), dp(42)),
+            self.font_size(27),
             halign="right",
         )
         self.add_widget(self.outside_value_label)
@@ -689,27 +716,32 @@ class Dashboard(FloatLayout):
             maximum=50,
             segment_count=10,
             size_hint=(None, None),
-            size=(panel.width - dp(70), dp(18)),
-            pos=(panel.x + dp(52), panel.y + dp(18)),
+            size=(panel.width - bar_left - bar_right, dp(20)),
+            pos=(panel.x + bar_left, panel.y + dp(17)),
         )
         self.add_widget(self.outside_bar)
 
     def create_vehicle_panel(self):
         panel = self.bottom_left_panel
         self.panel_title(panel, "VEHICLE PROFILE", reserve_end=92)
+        chip_width = dp(78 if self.compact_mode else 74)
+        chip_height = dp(24 if self.compact_mode else 22)
+        chip_right = dp(12 if self.compact_mode else 14)
+        chip_x = panel.right - chip_right - chip_width
+        chip_y = panel.top - dp(40 if self.compact_mode else 39)
         self.add_widget(
             OutlinedChip(
                 size_hint=(None, None),
-                size=(dp(74), dp(22)),
-                pos=(panel.right - dp(88), panel.top - dp(39)),
+                size=(chip_width, chip_height),
+                pos=(chip_x, chip_y),
             )
         )
         self.add_widget(
             fixed_label(
                 "360 [color=ff1c2b]LIVE[/color]",
-                (panel.right - dp(88), panel.top - dp(39)),
-                (dp(74), dp(22)),
-                9,
+                (chip_x, chip_y),
+                (chip_width, chip_height),
+                self.font_size(9),
                 color=LIGHT_GREY,
                 markup=True,
             )
@@ -718,16 +750,25 @@ class Dashboard(FloatLayout):
             rotation_seconds=ROTATION_SECONDS,
             reverse_rotation=False,
             size_hint=(None, None),
-            size=(panel.width - dp(20), panel.height - dp(56)),
-            pos=(panel.x + dp(10), panel.y + dp(23)),
+            size=(
+                panel.width - dp(10 if self.compact_mode else 20),
+                panel.height - dp(48 if self.compact_mode else 56),
+            ),
+            pos=(
+                panel.x + dp(5 if self.compact_mode else 10),
+                panel.y + dp(19 if self.compact_mode else 23),
+            ),
         )
         self.add_widget(self.civic_player)
         self.add_widget(
             fixed_label(
                 "[b]HONDA CIVIC EG9  //  [color=ff1c2b]B16A2[/color][/b]",
-                (panel.x + dp(15), panel.y + dp(4)),
-                (panel.width - dp(30), dp(22)),
-                9,
+                (panel.x + dp(10 if self.compact_mode else 15), panel.y + dp(3)),
+                (
+                    panel.width - dp(20 if self.compact_mode else 30),
+                    dp(24),
+                ),
+                self.font_size(9),
                 markup=True,
             )
         )
@@ -740,7 +781,7 @@ class Dashboard(FloatLayout):
                 "SIMULATED INPUT",
                 (panel.right - dp(122), panel.top - dp(39)),
                 (dp(104), dp(24)),
-                8,
+                self.font_size(8),
                 color=LIGHT_GREY,
                 halign="right",
             )
@@ -750,8 +791,14 @@ class Dashboard(FloatLayout):
                 bar_count=17,
                 row_count=18,
                 size_hint=(None, None),
-                size=(panel.width - dp(24), panel.height - dp(50)),
-                pos=(panel.x + dp(12), panel.y + dp(7)),
+                size=(
+                    panel.width - dp(14 if self.compact_mode else 24),
+                    panel.height - dp(42 if self.compact_mode else 50),
+                ),
+                pos=(
+                    panel.x + dp(7 if self.compact_mode else 12),
+                    panel.y + dp(4 if self.compact_mode else 7),
+                ),
             )
         )
 
