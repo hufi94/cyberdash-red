@@ -13,8 +13,10 @@ any car frames.
 - inside/outside climate rows with anti-aliased white/red thermometer icons and
   red segmented gauges
 - rotating Civic module labelled `HONDA CIVIC EG9 // B16A2` with `360 LIVE`
-- simulated segmented audio spectrum with solid red baseline segments that
-  progress through coral and pale red to white at full height
+- sound-triggered segmented visualizer using GPIO22, with a safe simulated
+  fallback when the microphone module is not connected
+- solid red baseline segments that progress through coral and pale red to
+  white at full height
 - no continuous gray climate tracks and no diagonal background clutter
 
 ## Approved Civic animation
@@ -51,10 +53,12 @@ The full motion preview is available here:
 - `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
 - `build_approved_civic_frames.py` — optional frame rebuilding tool
 - `floor_glow.py` — projects the rotating soft red floor frame in code
+- `sound_input.py` — reads the microphone module's digital sound trigger
 
 `dashboard_v2.py` reads the inside BME280 at `0x77` and the outside BME280 at
 `0x76`. Sensor connection errors are shown on screen without stopping the
-dashboard. The audio visualizer is still a simulated placeholder.
+dashboard. The audio visualizer uses the four-pin sound module when its digital
+output is available and falls back to the original animation elsewhere.
 
 ## SiR startup loader
 
@@ -131,6 +135,43 @@ To test it in a normal resizable window instead, run:
 
 ```bash
 CYBERDASH_WINDOWED=1 python dashboard_v2.py
+```
+
+## Test the existing four-pin sound module
+
+This first test uses the module's `DO` digital output. It makes the visualizer
+respond to real sound and beat threshold crossings, but it does not provide
+separate bass, mid and treble frequency measurements. Those require a future
+USB audio input or ADC.
+
+Connect only these three wires while the Pi is powered off:
+
+| Sound module | Raspberry Pi 5 |
+| --- | --- |
+| `+` | 3.3 V, physical pin 17 |
+| `G` | Ground, physical pin 20 |
+| `DO` | GPIO22, physical pin 15 |
+| `AO` | Leave disconnected |
+
+Use **3.3 V only** for this test. Do not connect the module's `+` pin to 5 V
+while `DO` is attached directly to the Raspberry Pi.
+
+After powering on, turn the module's blue sensitivity adjustment slowly until
+its digital-output indicator is off during silence and flashes with nearby
+music. Then run:
+
+```bash
+cd ~/Desktop/cyberdash_red
+source .venv/bin/activate
+python dashboard_v2.py
+```
+
+The visualizer header displays `SOUND // LIVE` when GPIO22 is active. If the
+GPIO library is unavailable, it displays `SIMULATED INPUT` and keeps running.
+To force the simulated mode for troubleshooting:
+
+```bash
+CYBERDASH_SOUND_INPUT=simulate python dashboard_v2.py
 ```
 
 ## Start automatically with the Raspberry Pi
