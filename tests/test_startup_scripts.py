@@ -17,6 +17,7 @@ class StartupScriptTests(unittest.TestCase):
             "install_kiosk_startup.sh",
             "disable_kiosk_startup.sh",
             "start_dashboard_early.sh",
+            "configure_displays.sh",
             "install_early_startup.sh",
             "disable_early_startup.sh",
         ):
@@ -139,8 +140,66 @@ class StartupScriptTests(unittest.TestCase):
         )
         self.assertIn("attempt <= 150", source)
         self.assertIn("xsetroot -solid black", source)
+        self.assertIn('display_profile="${project_dir}/configure_displays.sh"', source)
+        self.assertIn('if ! "${display_profile}"', source)
         self.assertIn('dashboard_v2.py"', source)
         self.assertNotIn("loader.py", source)
+
+    def test_display_profile_separates_dashboard_and_work_monitor(self):
+        source = (PROJECT / "configure_displays.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('small_mode="${CYBERDASH_SMALL_MODE:-640x480}"', source)
+        self.assertIn('work_mode="${CYBERDASH_WORK_MODE:-1920x1080}"', source)
+        self.assertIn("--rotate inverted", source)
+        self.assertIn("--rotate normal", source)
+        self.assertIn("--primary", source)
+        self.assertIn('--right-of "${small_output}"', source)
+
+    def test_display_profile_applies_expected_xrandr_arguments(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            fake_xrandr = temporary_path / "xrandr"
+            argument_log = temporary_path / "arguments.txt"
+            fake_xrandr.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--query" ]]; then
+    printf '%s\n' \\
+        'HDMI-1 connected primary 640x480+0+0 normal' \\
+        '   640x480      60.00*' \\
+        'HDMI-2 connected 1920x1080+640+0 normal' \\
+        '   1920x1080    60.00*'
+    exit 0
+fi
+printf '%s\n' "$*" > "${XRANDR_ARGUMENT_LOG}"
+""",
+                encoding="utf-8",
+            )
+            fake_xrandr.chmod(0o755)
+            environment = os.environ.copy()
+            environment["CYBERDASH_XRANDR_BIN"] = str(fake_xrandr)
+            environment["XRANDR_ARGUMENT_LOG"] = str(argument_log)
+
+            subprocess.run(
+                [str(PROJECT / "configure_displays.sh")],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
+            arguments = argument_log.read_text(encoding="utf-8")
+            self.assertIn(
+                "--output HDMI-1 --mode 640x480 --rotate inverted "
+                "--primary --pos 0x0",
+                arguments,
+            )
+            self.assertIn(
+                "--output HDMI-2 --rotate normal --mode 1920x1080 "
+                "--right-of HDMI-1",
+                arguments,
+            )
 
     def test_early_service_uses_the_proven_graphical_target(self):
         source = (PROJECT / "install_early_startup.sh").read_text(

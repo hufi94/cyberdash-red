@@ -5,6 +5,7 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 python_path="${project_dir}/.venv/bin/python"
 log_dir="${project_dir}/runtime"
 log_file="${log_dir}/dashboard.log"
+display_profile="${project_dir}/configure_displays.sh"
 
 mkdir -p "${log_dir}"
 exec >> "${log_file}" 2>&1
@@ -44,6 +45,18 @@ fi
 xset s off >/dev/null 2>&1 || true
 xset -dpms >/dev/null 2>&1 || true
 xset s noblank >/dev/null 2>&1 || true
+
+# Apply the two-monitor geometry before SDL creates the fullscreen Kivy window.
+# A display-profile problem must not trap the Pi on a black screen: the error
+# is logged and the dashboard still starts with the current display settings.
+if [[ -x "${display_profile}" ]]; then
+    if ! "${display_profile}"; then
+        printf 'Warning: display profile failed; continuing with current settings.\n'
+    fi
+else
+    printf 'Warning: display profile is not executable: %s\n' \
+        "${display_profile}"
+fi
 
 cd "${project_dir}"
 exec "${python_path}" "${project_dir}/dashboard_v2.py"

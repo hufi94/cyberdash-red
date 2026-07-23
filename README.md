@@ -178,9 +178,25 @@ then install the reversible early-start service:
 ```bash
 cd ~/Desktop/cyberdash_red
 ./disable_kiosk_startup.sh
-chmod +x start_dashboard_early.sh install_early_startup.sh disable_early_startup.sh
+chmod +x configure_displays.sh start_dashboard_early.sh install_early_startup.sh disable_early_startup.sh
 ./install_early_startup.sh
 ```
+
+The early launcher applies the tested two-monitor profile before Kivy opens:
+
+- the first Raspberry Pi micro-HDMI port (board `HDMI0`) is the primary
+  640×480 dashboard display, rotated to **Inverted** (180 degrees);
+- the second micro-HDMI port (board `HDMI1`) is the upright 1920×1080 work
+  display, positioned to the right;
+- if the work display is disconnected, the small dashboard display continues
+  to use the same resolution and orientation on its own.
+
+The defaults can be overridden without changing the script by setting
+`CYBERDASH_SMALL_OUTPUT`, `CYBERDASH_WORK_OUTPUT`,
+`CYBERDASH_SMALL_MODE`, or `CYBERDASH_WORK_MODE`. If 1920×1080 is unavailable,
+the work display falls back to its preferred native resolution. Display-profile
+errors are recorded in `runtime/dashboard.log` but never prevent the dashboard
+from starting.
 
 Keep **Boot to Desktop**, **Desktop Auto Login**, and the Raspberry Pi splash
 enabled, then reboot:
