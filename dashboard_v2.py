@@ -7,7 +7,8 @@ the approved structured red/white telemetry layout and transparent 220-frame
 Civic player.
 The 480-pixel-tall design adapts from 640 to 854 pixels wide before scaling,
 so common Pi and HDMI displays are filled without stretching the artwork.
-The audio visualizer remains explicitly simulated.
+The audio visualizer uses the sound module's GPIO22 digital trigger when
+available and keeps the original simulation as a development fallback.
 """
 
 import os
@@ -75,6 +76,7 @@ from display_layout import (
     design_width_for_window,
     fit_design_to_window,
 )
+from sound_input import DigitalSoundInput, microphone_bar_targets
 from startup_loader import DashboardWithStartupLoader
 
 
@@ -321,12 +323,14 @@ class SegmentedTemperatureBar(Widget):
 
 
 class Visualizer(Widget):
-    """Segmented simulated spectrum with a red-to-white vertical colour map."""
+    """Segmented sound-reactive display with a simulation fallback."""
 
-    def __init__(self, bar_count=17, row_count=18, **kwargs):
+    def __init__(self, bar_count=17, row_count=18, sound_input=None, **kwargs):
         super().__init__(**kwargs)
         self.bar_count = bar_count
         self.row_count = row_count
+        self.sound_input = sound_input
+        self.sound_phase = 0.0
         self.bar_values = [
             0.34 + 0.22 * (math.sin(index * 0.92) + 1.0) / 2.0
             for index in range(bar_count)
@@ -357,15 +361,31 @@ class Visualizer(Widget):
         Clock.schedule_interval(self.animate, 1 / 30)
 
     def animate(self, _dt):
+        live_input = self.sound_input is not None and self.sound_input.is_live
+        if live_input:
+            self.sound_phase += max(0.0, _dt) * 5.4
+            self.target_values = microphone_bar_targets(
+                self.sound_input.level,
+                self.bar_count,
+                self.sound_phase,
+            )
+        else:
+            for index in range(self.bar_count):
+                if random.random() < 0.12:
+                    wave = (
+                        math.sin(index * 0.75 + random.random() * 2) + 1
+                    ) / 2
+                    self.target_values[index] = max(
+                        0.08,
+                        min(1.0, wave * random.uniform(0.45, 1.0)),
+                    )
         for index in range(self.bar_count):
-            if random.random() < 0.12:
-                wave = (math.sin(index * 0.75 + random.random() * 2) + 1) / 2
-                self.target_values[index] = max(
-                    0.08, min(1.0, wave * random.uniform(0.45, 1.0))
-                )
             current = self.bar_values[index]
             target = self.target_values[index]
-            factor = 0.32 if target > current else 0.11
+            if live_input:
+                factor = 0.46 if target > current else 0.14
+            else:
+                factor = 0.32 if target > current else 0.11
             self.bar_values[index] = current + (target - current) * factor
         self.update_canvas()
 
@@ -509,6 +529,7 @@ class Dashboard(FloatLayout):
         self.inside_sensor = None
         self.outside_sensor = None
         self.sensor_status = "CONNECTING"
+        self.sound_input = DigitalSoundInput()
 
         self.create_background()
         self.create_panels()
@@ -520,6 +541,7 @@ class Dashboard(FloatLayout):
 
         Clock.schedule_interval(self.update_clock, 0.25)
         Clock.schedule_interval(self.update_sensors, 2.0)
+        Clock.schedule_interval(self.update_sound_status, 1.0)
         self.update_clock(0)
         self.update_sensors(0)
 
@@ -860,20 +882,20 @@ class Dashboard(FloatLayout):
     def create_visualizer_panel(self):
         panel = self.bottom_right_panel
         self.panel_title(panel, "AUDIO VISUALIZER", reserve_end=112)
-        self.add_widget(
-            fixed_label(
-                "SIMULATED INPUT",
-                (panel.right - dp(122), panel.top - dp(39)),
-                (dp(104), dp(24)),
-                self.font_size(8),
-                color=LIGHT_GREY,
-                halign="right",
-            )
+        self.audio_status_label = fixed_label(
+            self.sound_input.status_text,
+            (panel.right - dp(122), panel.top - dp(39)),
+            (dp(104), dp(24)),
+            self.font_size(8),
+            color=LIGHT_GREY,
+            halign="right",
         )
+        self.add_widget(self.audio_status_label)
         self.add_widget(
             Visualizer(
                 bar_count=17,
                 row_count=18,
+                sound_input=self.sound_input,
                 size_hint=(None, None),
                 size=(
                     panel.width - dp(14 if self.compact_mode else 24),
@@ -885,6 +907,12 @@ class Dashboard(FloatLayout):
                 ),
             )
         )
+
+    def close_inputs(self):
+        self.sound_input.close()
+
+    def update_sound_status(self, _dt):
+        self.audio_status_label.text = self.sound_input.status_text
 
     def connect_sensors(self):
         try:
@@ -983,6 +1011,12 @@ class RacingDashboardApp(App):
 
     def build(self):
         return DashboardWithStartupLoader(ResponsiveDashboard)
+
+    def on_stop(self):
+        responsive = getattr(self.root, "dashboard", None)
+        dashboard = getattr(responsive, "dashboard", None)
+        if dashboard is not None:
+            dashboard.close_inputs()
 
 
 if __name__ == "__main__":
