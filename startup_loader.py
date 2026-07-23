@@ -27,6 +27,8 @@ LOGO_ASPECT = 520.0 / 96.0
 class StartupLoader(FloatLayout):
     """Fade and gently pulse until the dashboard reports that it is ready."""
 
+    __events__ = ("on_complete",)
+
     logo_opacity = NumericProperty(0.0)
     logo_scale = NumericProperty(0.94)
     glow_opacity = NumericProperty(0.0)
