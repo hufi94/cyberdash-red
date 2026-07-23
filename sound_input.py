@@ -16,6 +16,7 @@ import time
 DEFAULT_GPIO_NAME = "D22"
 DEFAULT_SAMPLE_INTERVAL = 0.002
 DEFAULT_ACTIVE_LOW = True
+DEFAULT_SOUND_INPUT_MODE = "simulate"
 
 
 def environment_flag(name, default):
@@ -90,6 +91,7 @@ class DigitalSoundInput:
         active_low=None,
         sample_interval=DEFAULT_SAMPLE_INTERVAL,
         reader=None,
+        source_mode=None,
     ):
         self.gpio_name = gpio_name or os.environ.get(
             "CYBERDASH_MIC_GPIO",
@@ -111,9 +113,18 @@ class DigitalSoundInput:
         self.is_live = False
         self.error = None
 
-        source_mode = os.environ.get("CYBERDASH_SOUND_INPUT", "gpio").lower()
-        if source_mode == "simulate":
-            self.error = "GPIO sound input disabled by CYBERDASH_SOUND_INPUT"
+        self.source_mode = (
+            source_mode
+            or os.environ.get(
+                "CYBERDASH_SOUND_INPUT",
+                DEFAULT_SOUND_INPUT_MODE,
+            )
+        ).strip().lower()
+        if self.source_mode != "gpio":
+            self.error = (
+                "GPIO sound input disabled; "
+                "set CYBERDASH_SOUND_INPUT=gpio to enable it"
+            )
             return
 
         try:
