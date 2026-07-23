@@ -75,6 +75,7 @@ from display_layout import (
     design_width_for_window,
     fit_design_to_window,
 )
+from startup_loader import DashboardWithStartupLoader
 
 
 BACKGROUND = (0.025, 0.025, 0.03, 1)
@@ -981,7 +982,7 @@ class RacingDashboardApp(App):
     title = "Civic Racing Dashboard V2"
 
     def build(self):
-        return ResponsiveDashboard()
+        return DashboardWithStartupLoader(ResponsiveDashboard)
 
 
 if __name__ == "__main__":
