@@ -23,6 +23,7 @@ class StartupLoaderTests(unittest.TestCase):
         source = (PROJECT / "startup_loader.py").read_text(encoding="utf-8")
 
         self.assertIn('__events__ = ("on_complete",)', source)
+        self.assertIn("MINIMUM_VISIBLE_SECONDS = 3.0", source)
         self.assertIn("rotation_started_at", source)
         self.assertIn("MAXIMUM_VISIBLE_SECONDS", source)
         self.assertIn("MINIMUM_VISIBLE_SECONDS", source)
@@ -32,6 +33,7 @@ class StartupLoaderTests(unittest.TestCase):
     def test_dashboard_wraps_the_live_interface_with_the_loader(self):
         source = (PROJECT / "dashboard_v2.py").read_text(encoding="utf-8")
 
+        self.assertIn("Window.clearcolor = (0, 0, 0, 1)", source)
         self.assertIn("DashboardWithStartupLoader", source)
         self.assertIn(
             "return DashboardWithStartupLoader(ResponsiveDashboard)",
