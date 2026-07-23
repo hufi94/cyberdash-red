@@ -14,7 +14,7 @@ from kivy.uix.image import Image
 ASSET_DIRECTORY = Path(__file__).resolve().parent / "assets" / "startup"
 LOGO_PATH = ASSET_DIRECTORY / "sir_loader_logo.png"
 
-MINIMUM_VISIBLE_SECONDS = 2.4
+MINIMUM_VISIBLE_SECONDS = 3.0
 MAXIMUM_VISIBLE_SECONDS = 12.0
 FADE_IN_SECONDS = 0.75
 FADE_OUT_SECONDS = 0.65

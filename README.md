@@ -64,7 +64,7 @@ uses a restrained red breathing pulse until Civic rotation is ready. It then
 fades away to reveal the already-running dashboard, so there is no second
 window, white frame, or desktop flash between the loader and V2.
 
-The loader stays visible for at least `2.4` seconds. It normally closes as
+The loader stays visible for at least `3.0` seconds. It normally closes as
 soon as all 220 Civic frames are decoded; a `12`-second safety limit prevents
 a damaged frame set from trapping the display on the emblem. These values,
 along with the fade and pulse speeds, are grouped at the top of

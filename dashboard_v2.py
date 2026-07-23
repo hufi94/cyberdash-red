@@ -88,7 +88,7 @@ INACTIVE_RED = (0.12, 0.012, 0.022, 1)
 
 # Set this as soon as the Window exists so the initial buffer is black instead
 # of briefly flashing white while the dashboard and Civic textures load.
-Window.clearcolor = BACKGROUND
+Window.clearcolor = (0, 0, 0, 1)
 Window.show_cursor = WINDOWED_MODE
 
 

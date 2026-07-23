@@ -83,6 +83,10 @@ printf '%s\n' "${session_autostart}" > "${state_dir}/autostart-path"
 session_runner="${state_dir}/run-dashboard-session.sh"
 printf '%s\n' \
     '#!/usr/bin/env bash' \
+    '# Paint the X11 root window black before Python and Kivy start.' \
+    'if command -v xsetroot >/dev/null 2>&1; then' \
+    '    xsetroot -solid black >/dev/null 2>&1 || true' \
+    'fi' \
     '# Restart after a crash; a clean exit such as Esc remains black.' \
     'while true; do' \
     "    env CYBERDASH_START_DELAY=0 '${start_script}'" \

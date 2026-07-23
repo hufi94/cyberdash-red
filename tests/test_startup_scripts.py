@@ -99,6 +99,7 @@ class StartupScriptTests(unittest.TestCase):
                 / "run-dashboard-session.sh"
             ).read_text(encoding="utf-8")
             self.assertIn("CYBERDASH_START_DELAY=0", runner)
+            self.assertIn("xsetroot -solid black", runner)
 
             subprocess.run(
                 [str(PROJECT / "disable_kiosk_startup.sh")],
