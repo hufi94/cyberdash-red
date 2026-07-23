@@ -22,6 +22,7 @@ class StartupLoaderTests(unittest.TestCase):
     def test_loader_waits_for_civic_rotation_and_has_a_safe_timeout(self):
         source = (PROJECT / "startup_loader.py").read_text(encoding="utf-8")
 
+        self.assertIn('__events__ = ("on_complete",)', source)
         self.assertIn("rotation_started_at", source)
         self.assertIn("MAXIMUM_VISIBLE_SECONDS", source)
         self.assertIn("MINIMUM_VISIBLE_SECONDS", source)
