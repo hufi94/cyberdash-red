@@ -137,6 +137,15 @@ To test it in a normal resizable window instead, run:
 CYBERDASH_WINDOWED=1 python dashboard_v2.py
 ```
 
+## Audio visualizer modes
+
+The dashboard currently starts with the smooth simulated visualizer. No
+microphone wiring is required, and the visualizer header displays
+`SIMULATED INPUT`.
+
+When the new USB microphone is available, this input layer will be replaced by
+real USB audio capture without changing the dashboard layout.
+
 ## Test the existing four-pin sound module
 
 This first test uses the module's `DO` digital output. It makes the visualizer
@@ -158,20 +167,20 @@ while `DO` is attached directly to the Raspberry Pi.
 
 After powering on, turn the module's blue sensitivity adjustment slowly until
 its digital-output indicator is off during silence and flashes with nearby
-music. Then run:
+music. The GPIO mode is optional and must now be selected explicitly:
 
 ```bash
 cd ~/Desktop/cyberdash_red
 source .venv/bin/activate
-python dashboard_v2.py
+CYBERDASH_SOUND_INPUT=gpio python dashboard_v2.py
 ```
 
 The visualizer header displays `SOUND // LIVE` when GPIO22 is active. If the
 GPIO library is unavailable, it displays `SIMULATED INPUT` and keeps running.
-To force the simulated mode for troubleshooting:
+The normal command uses the simulated visualizer:
 
 ```bash
-CYBERDASH_SOUND_INPUT=simulate python dashboard_v2.py
+python dashboard_v2.py
 ```
 
 ## Start automatically with the Raspberry Pi

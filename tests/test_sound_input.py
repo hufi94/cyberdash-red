@@ -1,8 +1,12 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from sound_input import (
     DEFAULT_GPIO_NAME,
+    DEFAULT_SOUND_INPUT_MODE,
     BeatEnvelope,
+    DigitalSoundInput,
     microphone_bar_targets,
 )
 
@@ -48,6 +52,27 @@ class MicrophoneBarTargetTest(unittest.TestCase):
     def test_invalid_bar_count_is_rejected(self):
         with self.assertRaises(ValueError):
             microphone_bar_targets(0.5, 0, 0.0)
+
+
+class SoundInputModeTest(unittest.TestCase):
+    def test_simulation_is_the_safe_default(self):
+        self.assertEqual(DEFAULT_SOUND_INPUT_MODE, "simulate")
+        with patch.dict(os.environ, {}, clear=True):
+            sound_input = DigitalSoundInput()
+
+        self.assertFalse(sound_input.is_live)
+        self.assertEqual(sound_input.status_text, "SIMULATED INPUT")
+
+    def test_gpio_mode_can_still_be_selected_explicitly(self):
+        sound_input = DigitalSoundInput(
+            source_mode="gpio",
+            reader=lambda: True,
+        )
+        try:
+            self.assertTrue(sound_input.is_live)
+            self.assertEqual(sound_input.status_text, "SOUND // LIVE")
+        finally:
+            sound_input.close()
 
 
 if __name__ == "__main__":
