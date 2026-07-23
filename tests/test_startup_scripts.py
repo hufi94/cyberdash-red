@@ -16,6 +16,9 @@ class StartupScriptTests(unittest.TestCase):
             "disable_autostart.sh",
             "install_kiosk_startup.sh",
             "disable_kiosk_startup.sh",
+            "start_dashboard_early.sh",
+            "install_early_startup.sh",
+            "disable_early_startup.sh",
         ):
             with self.subTest(script=name):
                 subprocess.run(
@@ -129,6 +132,24 @@ class StartupScriptTests(unittest.TestCase):
     def test_fullscreen_dashboard_hides_pointer(self):
         source = (PROJECT / "dashboard_v2.py").read_text(encoding="utf-8")
         self.assertIn("Window.show_cursor = WINDOWED_MODE", source)
+
+    def test_early_launcher_waits_for_x_and_runs_v2_directly(self):
+        source = (PROJECT / "start_dashboard_early.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("attempt <= 150", source)
+        self.assertIn("xsetroot -solid black", source)
+        self.assertIn('dashboard_v2.py"', source)
+        self.assertNotIn("loader.py", source)
+
+    def test_early_service_uses_the_proven_graphical_target(self):
+        source = (PROJECT / "install_early_startup.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Environment=DISPLAY=:0", source)
+        self.assertIn("WantedBy=graphical.target", source)
+        self.assertIn("start_dashboard_early.sh", source)
+        self.assertIn('systemctl enable "${service_name}"', source)
 
 
 if __name__ == "__main__":

@@ -163,60 +163,39 @@ cd ~/Desktop/cyberdash_red
 
 The disabled entry is renamed with a timestamp instead of being deleted.
 
-## Fast kiosk startup without showing the desktop
+## Early startup without showing the desktop
 
-The installer detects both current labwc sessions and older Raspberry Pi
-LXDE/Openbox sessions. Cyberdash replaces that session's normal panel and
-desktop startup so the visible sequence is the Raspberry Pi splash, a black
-screen, and then the dashboard. This keeps the working graphical display and
-dual-HDMI configuration while avoiding the desktop flash. The launcher has no
-delay by default, and the mouse pointer is hidden in fullscreen mode.
+On the tested Raspberry Pi LXDE setup, replacing the complete session autostart
+caused Kivy to be terminated and restarted repeatedly. The recommended startup
+therefore keeps the normal graphical session and uses a system service based on
+the earlier proven Civic launcher. It waits for X11, paints the root window
+black, and starts V2 directly. The SiR overlay is part of V2; no separate loader
+process is launched.
 
-First confirm that V2 works fullscreen and that the small display is configured
-as the primary display. Then install the reversible kiosk startup:
-
-```bash
-cd ~/Desktop/cyberdash_red
-chmod +x \
-    start_dashboard.sh \
-    install_kiosk_startup.sh \
-    disable_kiosk_startup.sh
-./install_kiosk_startup.sh
-```
-
-Open Raspberry Pi configuration:
-
-```bash
-sudo raspi-config
-```
-
-Confirm these settings before rebooting:
-
-1. **Boot** is set to **Desktop**.
-2. **Desktop Auto Login** is enabled.
-3. **Splash Screen** is enabled.
-
-Then reboot:
-
-```bash
-sudo reboot
-```
-
-If the dashboard exits normally, including by pressing **Esc**, the display
-stays black instead of exposing the desktop. If the dashboard crashes, the
-kiosk launcher waits one second and restarts it.
-
-To restore the normal desktop, press **Ctrl+Alt+F2**, log in, and run:
+First restore the normal desktop if stripped kiosk mode was previously enabled,
+then install the reversible early-start service:
 
 ```bash
 cd ~/Desktop/cyberdash_red
 ./disable_kiosk_startup.sh
+chmod +x start_dashboard_early.sh install_early_startup.sh disable_early_startup.sh
+./install_early_startup.sh
+```
+
+Keep **Boot to Desktop**, **Desktop Auto Login**, and the Raspberry Pi splash
+enabled, then reboot:
+
+```bash
 sudo reboot
 ```
 
-The installer backs up the detected labwc or `LXDE-pi` session autostart file
-and the normal Cyberdash desktop-autostart entry. The disable script restores
-both and keeps the generated kiosk files in a timestamped recovery folder.
+To disable early startup and restore the saved desktop-autostart entry:
+
+```bash
+cd ~/Desktop/cyberdash_red
+./disable_early_startup.sh
+sudo reboot
+```
 
 ## Test the two BME280 sensors
 
