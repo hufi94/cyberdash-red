@@ -7,8 +7,8 @@ the approved structured red/white telemetry layout and transparent 220-frame
 Civic player.
 The 480-pixel-tall design adapts from 640 to 854 pixels wide before scaling,
 so common Pi and HDMI displays are filled without stretching the artwork.
-The audio visualizer uses the sound module's GPIO22 digital trigger when
-available and keeps the original simulation as a development fallback.
+The audio visualizer uses real USB microphone frequency bands when available
+and keeps the original simulation as a non-fatal fallback.
 """
 
 import os
@@ -76,7 +76,7 @@ from display_layout import (
     design_width_for_window,
     fit_design_to_window,
 )
-from sound_input import DigitalSoundInput, microphone_bar_targets
+from sound_input import create_sound_input
 from startup_loader import DashboardWithStartupLoader
 
 
@@ -364,8 +364,7 @@ class Visualizer(Widget):
         live_input = self.sound_input is not None and self.sound_input.is_live
         if live_input:
             self.sound_phase += max(0.0, _dt) * 5.4
-            self.target_values = microphone_bar_targets(
-                self.sound_input.level,
+            self.target_values = self.sound_input.bar_targets(
                 self.bar_count,
                 self.sound_phase,
             )
@@ -529,7 +528,7 @@ class Dashboard(FloatLayout):
         self.inside_sensor = None
         self.outside_sensor = None
         self.sensor_status = "CONNECTING"
-        self.sound_input = DigitalSoundInput()
+        self.sound_input = create_sound_input(bar_count=17)
 
         self.create_background()
         self.create_panels()
@@ -542,6 +541,7 @@ class Dashboard(FloatLayout):
         Clock.schedule_interval(self.update_clock, 0.25)
         Clock.schedule_interval(self.update_sensors, 2.0)
         Clock.schedule_interval(self.update_sound_status, 1.0)
+        Clock.schedule_interval(self.retry_sound_input, 5.0)
         self.update_clock(0)
         self.update_sensors(0)
 
@@ -891,28 +891,40 @@ class Dashboard(FloatLayout):
             halign="right",
         )
         self.add_widget(self.audio_status_label)
-        self.add_widget(
-            Visualizer(
-                bar_count=17,
-                row_count=18,
-                sound_input=self.sound_input,
-                size_hint=(None, None),
-                size=(
-                    panel.width - dp(14 if self.compact_mode else 24),
-                    panel.height - dp(42 if self.compact_mode else 50),
-                ),
-                pos=(
-                    panel.x + dp(7 if self.compact_mode else 12),
-                    panel.y + dp(4 if self.compact_mode else 7),
-                ),
-            )
+        self.visualizer = Visualizer(
+            bar_count=17,
+            row_count=18,
+            sound_input=self.sound_input,
+            size_hint=(None, None),
+            size=(
+                panel.width - dp(14 if self.compact_mode else 24),
+                panel.height - dp(42 if self.compact_mode else 50),
+            ),
+            pos=(
+                panel.x + dp(7 if self.compact_mode else 12),
+                panel.y + dp(4 if self.compact_mode else 7),
+            ),
         )
+        self.add_widget(self.visualizer)
 
     def close_inputs(self):
         self.sound_input.close()
 
     def update_sound_status(self, _dt):
         self.audio_status_label.text = self.sound_input.status_text
+
+    def retry_sound_input(self, _dt):
+        if self.sound_input.is_live:
+            return
+        candidate = create_sound_input(bar_count=17, log_errors=False)
+        if not candidate.is_live:
+            candidate.close()
+            return
+        previous = self.sound_input
+        self.sound_input = candidate
+        self.visualizer.sound_input = candidate
+        previous.close()
+        self.audio_status_label.text = candidate.status_text
 
     def connect_sensors(self):
         try:

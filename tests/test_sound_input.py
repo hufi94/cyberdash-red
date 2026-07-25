@@ -1,13 +1,26 @@
+import json
+import math
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
+
+import numpy as np
 
 from sound_input import (
     DEFAULT_GPIO_NAME,
     DEFAULT_SOUND_INPUT_MODE,
     BeatEnvelope,
     DigitalSoundInput,
+    SimulatedSoundInput,
+    UsbAudioInput,
+    create_sound_input,
+    fft_band_levels,
+    frequency_band_edges,
+    load_audio_settings,
     microphone_bar_targets,
+    select_input_device,
 )
 
 
@@ -33,7 +46,7 @@ class BeatEnvelopeTest(unittest.TestCase):
 
 
 class MicrophoneBarTargetTest(unittest.TestCase):
-    def test_default_input_uses_the_separate_gpio22_pin(self):
+    def test_default_gpio_uses_the_separate_gpio22_pin(self):
         self.assertEqual(DEFAULT_GPIO_NAME, "D22")
 
     def test_silence_keeps_only_the_baseline(self):
@@ -41,7 +54,7 @@ class MicrophoneBarTargetTest(unittest.TestCase):
 
         self.assertEqual(targets, [0.04] * 17)
 
-    def test_real_energy_drives_a_bounded_decorative_profile(self):
+    def test_real_gpio_energy_drives_a_bounded_decorative_profile(self):
         quiet = microphone_bar_targets(0.1, 17, 1.2)
         loud = microphone_bar_targets(0.9, 17, 1.2)
 
@@ -54,25 +67,189 @@ class MicrophoneBarTargetTest(unittest.TestCase):
             microphone_bar_targets(0.5, 0, 0.0)
 
 
-class SoundInputModeTest(unittest.TestCase):
-    def test_simulation_is_the_safe_default(self):
-        self.assertEqual(DEFAULT_SOUND_INPUT_MODE, "simulate")
-        with patch.dict(os.environ, {}, clear=True):
-            sound_input = DigitalSoundInput()
+class SpectrumTest(unittest.TestCase):
+    def test_frequency_edges_are_logarithmic_and_nyquist_safe(self):
+        edges = frequency_band_edges(16000, 17, 55, 10000)
 
-        self.assertFalse(sound_input.is_live)
-        self.assertEqual(sound_input.status_text, "SIMULATED INPUT")
+        self.assertEqual(len(edges), 18)
+        self.assertGreaterEqual(edges[0], 55)
+        self.assertLessEqual(edges[-1], 8000 * 0.96)
+        ratios = edges[1:] / edges[:-1]
+        self.assertTrue(np.allclose(ratios, ratios[0]))
 
-    def test_gpio_mode_can_still_be_selected_explicitly(self):
-        sound_input = DigitalSoundInput(
-            source_mode="gpio",
-            reader=lambda: True,
+    def test_bass_and_treble_tones_peak_in_different_bands(self):
+        sample_rate = 44100
+        times = np.arange(4096) / sample_rate
+        bass = 0.12 * np.sin(2 * math.pi * 110 * times)
+        treble = 0.12 * np.sin(2 * math.pi * 4200 * times)
+
+        bass_levels = fft_band_levels(bass, sample_rate)
+        treble_levels = fft_band_levels(treble, sample_rate)
+
+        self.assertLess(int(np.argmax(bass_levels)), 6)
+        self.assertGreater(int(np.argmax(treble_levels)), 11)
+        self.assertGreater(float(np.max(bass_levels)), 0.75)
+        self.assertGreater(float(np.max(treble_levels)), 0.65)
+
+    def test_noise_gate_keeps_quiet_input_at_baseline(self):
+        samples = np.full(2048, 0.0005, dtype=np.float32)
+
+        levels = fft_band_levels(
+            samples,
+            44100,
+            sensitivity=1.0,
+            noise_gate=0.01,
+        )
+
+        self.assertTrue(np.allclose(levels, 0.04))
+
+
+class FakeDefaultDevice:
+    device = (0, 1)
+
+
+class FakeSoundDevice:
+    default = FakeDefaultDevice()
+
+    @staticmethod
+    def query_devices():
+        return [
+            {
+                "name": "Built-in Output",
+                "max_input_channels": 0,
+                "default_samplerate": 48000,
+            },
+            {
+                "name": "Built-in Microphone",
+                "max_input_channels": 1,
+                "default_samplerate": 48000,
+            },
+            {
+                "name": "USB PnP Sound Device",
+                "max_input_channels": 1,
+                "default_samplerate": 44100,
+            },
+        ]
+
+
+class NoUsbSoundDevice:
+    default = FakeDefaultDevice()
+
+    @staticmethod
+    def query_devices():
+        return [
+            {
+                "name": "Built-in Microphone",
+                "max_input_channels": 1,
+                "default_samplerate": 48000,
+            }
+        ]
+
+
+class FakeStream:
+    def __init__(self, **kwargs):
+        self.callback = kwargs["callback"]
+        self.sample_rate = kwargs["samplerate"]
+        self.stopped = False
+        self.closed = False
+
+    def start(self):
+        times = np.arange(2048) / self.sample_rate
+        samples = (0.12 * np.sin(2 * math.pi * 440 * times)).reshape(-1, 1)
+        self.callback(samples, len(samples), None, None)
+
+    def stop(self):
+        self.stopped = True
+
+    def close(self):
+        self.closed = True
+
+
+class UsbInputTest(unittest.TestCase):
+    def test_auto_selection_prefers_usb_microphone(self):
+        index, device = select_input_device(FakeSoundDevice())
+
+        self.assertEqual(index, 2)
+        self.assertEqual(device["name"], "USB PnP Sound Device")
+
+    def test_device_can_be_selected_by_name(self):
+        index, _device = select_input_device(
+            FakeSoundDevice(),
+            "built-in microphone",
+        )
+
+        self.assertEqual(index, 1)
+
+    def test_builtin_microphone_is_not_selected_as_usb_by_accident(self):
+        with self.assertRaisesRegex(RuntimeError, "no USB microphone"):
+            select_input_device(NoUsbSoundDevice())
+
+    def test_usb_stream_produces_real_frequency_bars(self):
+        microphone = UsbAudioInput(
+            settings={"mode": "usb", "sensitivity": 1.8},
+            sounddevice_module=FakeSoundDevice(),
+            stream_factory=FakeStream,
         )
         try:
+            self.assertTrue(microphone.is_live)
+            self.assertEqual(microphone.status_text, "USB MIC // LIVE")
+            self.assertEqual(microphone.device_name, "USB PnP Sound Device")
+            self.assertEqual(len(microphone.bar_targets(17)), 17)
+            self.assertGreater(max(microphone.bar_targets(17)), 0.5)
+        finally:
+            microphone.close()
+
+
+class SoundInputModeTest(unittest.TestCase):
+    def test_usb_is_the_default_with_simulation_as_fallback(self):
+        self.assertEqual(DEFAULT_SOUND_INPUT_MODE, "usb")
+        unavailable = type(
+            "UnavailableUsb",
+            (),
+            {
+                "is_live": False,
+                "error": "not connected",
+                "close": lambda self: None,
+            },
+        )()
+        with patch("sound_input.UsbAudioInput", return_value=unavailable):
+            sound_input = create_sound_input(settings={"mode": "usb"})
+
+        self.assertIsInstance(sound_input, SimulatedSoundInput)
+        self.assertEqual(sound_input.status_text, "SIMULATED INPUT")
+        self.assertIn("not connected", sound_input.error)
+
+    def test_gpio_mode_can_still_be_selected_explicitly(self):
+        sound_input = DigitalSoundInput(reader=lambda: True)
+        try:
             self.assertTrue(sound_input.is_live)
-            self.assertEqual(sound_input.status_text, "SOUND // LIVE")
+            self.assertEqual(sound_input.status_text, "GPIO MIC // LIVE")
         finally:
             sound_input.close()
+
+    def test_local_settings_and_environment_override_are_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audio_settings.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "mode": "simulate",
+                        "sensitivity": 2.5,
+                        "noise_gate": 0.01,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {"CYBERDASH_MIC_SENSITIVITY": "3.25"},
+                clear=True,
+            ):
+                settings = load_audio_settings(path)
+
+        self.assertEqual(settings["mode"], "simulate")
+        self.assertEqual(settings["sensitivity"], 3.25)
+        self.assertEqual(settings["noise_gate"], 0.01)
 
 
 if __name__ == "__main__":

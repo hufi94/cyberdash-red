@@ -1,5 +1,6 @@
 Pillow>=10.0
 numpy
+sounddevice>=0.5.5
 Kivy>=2.3.0
 adafruit-blinka
 adafruit-circuitpython-bme280
