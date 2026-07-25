@@ -11,3 +11,4 @@ assets/civic_frames_*_backup_*/
 assets/civic_outline_preview.png
 
 *.backup_*
+audio_settings.json

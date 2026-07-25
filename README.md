@@ -13,8 +13,8 @@ any car frames.
 - inside/outside climate rows with anti-aliased white/red thermometer icons and
   red segmented gauges
 - rotating Civic module labelled `HONDA CIVIC EG9 // B16A2` with `360 LIVE`
-- sound-triggered segmented visualizer using GPIO22, with a safe simulated
-  fallback when the microphone module is not connected
+- real 17-band USB microphone spectrum visualizer, with a safe simulated
+  fallback when the microphone is disconnected
 - solid red baseline segments that progress through coral and pale red to
   white at full height
 - no continuous gray climate tracks and no diagonal background clutter
@@ -53,12 +53,13 @@ The full motion preview is available here:
 - `dashboard_v1_handoff_reconstructed.py` — preserved reconstructed V1 baseline
 - `build_approved_civic_frames.py` — optional frame rebuilding tool
 - `floor_glow.py` — projects the rotating soft red floor frame in code
-- `sound_input.py` — reads the microphone module's digital sound trigger
+- `sound_input.py` — captures USB audio and calculates real frequency bands
+- `usb_mic_test.py` — identifies, tests and configures the USB microphone
 
 `dashboard_v2.py` reads the inside BME280 at `0x77` and the outside BME280 at
 `0x76`. Sensor connection errors are shown on screen without stopping the
-dashboard. The audio visualizer uses the four-pin sound module when its digital
-output is available and falls back to the original animation elsewhere.
+dashboard. The audio visualizer automatically selects the USB microphone and
+falls back to the original animation if audio input cannot start.
 
 ## SiR startup loader
 
@@ -93,6 +94,7 @@ git clone \
     cyberdash_red
 
 cd ~/Desktop/cyberdash_red
+sudo apt install -y alsa-utils libportaudio2 portaudio19-dev
 python3 -m venv .venv --system-site-packages
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -137,21 +139,104 @@ To test it in a normal resizable window instead, run:
 CYBERDASH_WINDOWED=1 python dashboard_v2.py
 ```
 
-## Audio visualizer modes
+## Set up the USB microphone
 
-The dashboard currently starts with the smooth simulated visualizer. No
-microphone wiring is required, and the visualizer header displays
-`SIMULATED INPUT`.
+Plug the MillSO microphone directly into a Raspberry Pi USB port. No GPIO
+wiring is required, and the BME280 sensor connections remain unchanged.
 
-When the new USB microphone is available, this input layer will be replaced by
-real USB audio capture without changing the dashboard layout.
+Install the system audio packages and update the Python environment:
+
+```bash
+cd ~/Desktop/cyberdash_red
+sudo apt update
+sudo apt install -y alsa-utils libportaudio2 portaudio19-dev
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Confirm that Linux can see the microphone:
+
+```bash
+arecord -l
+```
+
+The name will normally resemble `USB PnP Sound Device`, `USB Microphone` or
+`MillSO`. Then run the live spectrum test:
+
+```bash
+cd ~/Desktop/cyberdash_red
+source .venv/bin/activate
+python usb_mic_test.py
+```
+
+Play music near the microphone. The terminal line from `BASS` to `TREBLE`
+should move with the music. Press **Ctrl+C** to stop the test.
+
+The normal dashboard now attempts USB audio automatically:
+
+```bash
+python dashboard_v2.py
+```
+
+Its visualizer header displays `USB MIC // LIVE` when audio is active. If the
+microphone is unplugged or unavailable, it displays `SIMULATED INPUT` and the
+approved simulated animation continues instead of stopping the dashboard. The
+dashboard checks again every five seconds, so a microphone connected shortly
+after startup is picked up automatically.
+
+### Adjust and save sensitivity
+
+The default sensitivity is `1.8`. A higher number produces more movement; a
+lower number reduces movement. Test a higher setting:
+
+```bash
+python usb_mic_test.py --sensitivity 2.5
+```
+
+When it looks right, save it permanently:
+
+```bash
+python usb_mic_test.py --sensitivity 2.5 --save
+```
+
+The local `audio_settings.json` file is then loaded during normal and automatic
+dashboard startup. It is intentionally not committed to GitHub, so later
+updates do not overwrite the car's calibrated microphone setting.
+
+If the bars move during silence, raise the noise gate:
+
+```bash
+python usb_mic_test.py \
+    --sensitivity 2.5 \
+    --noise-gate 0.012 \
+    --save
+```
+
+Typical noise-gate values are `0.003` to `0.020`. To use a specific device
+when more than one microphone is connected:
+
+```bash
+python usb_mic_test.py \
+    --device "USB PnP" \
+    --sensitivity 2.5 \
+    --save
+```
+
+### Select a different visualizer input
+
+USB audio is the default. Simulation and the previous GPIO test remain
+available for troubleshooting:
+
+```bash
+CYBERDASH_SOUND_INPUT=simulate python dashboard_v2.py
+CYBERDASH_SOUND_INPUT=gpio python dashboard_v2.py
+```
 
 ## Test the existing four-pin sound module
 
 This first test uses the module's `DO` digital output. It makes the visualizer
 respond to real sound and beat threshold crossings, but it does not provide
-separate bass, mid and treble frequency measurements. Those require a future
-USB audio input or ADC.
+separate bass, mid and treble frequency measurements. The USB mode above does.
 
 Connect only these three wires while the Pi is powered off:
 
@@ -175,12 +260,12 @@ source .venv/bin/activate
 CYBERDASH_SOUND_INPUT=gpio python dashboard_v2.py
 ```
 
-The visualizer header displays `SOUND // LIVE` when GPIO22 is active. If the
+The visualizer header displays `GPIO MIC // LIVE` when GPIO22 is active. If the
 GPIO library is unavailable, it displays `SIMULATED INPUT` and keeps running.
-The normal command uses the simulated visualizer:
+To force the simulated visualizer:
 
 ```bash
-python dashboard_v2.py
+CYBERDASH_SOUND_INPUT=simulate python dashboard_v2.py
 ```
 
 ## Start automatically with the Raspberry Pi
