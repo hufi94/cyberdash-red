@@ -103,6 +103,8 @@ class DashboardColourTest(unittest.TestCase):
         self.assertIn("self.sound_input.bar_targets", source)
         self.assertIn("sound_input=self.sound_input", source)
         self.assertNotIn("retry_sound_input", source)
+        self.assertIn("LIVE_VISUALIZER_ATTACK = 0.75", source)
+        self.assertIn("LIVE_VISUALIZER_RELEASE = 0.18", source)
         self.assertIn("HONDA CIVIC EK9", source)
         self.assertNotIn("self.background_lines", source)
 
