@@ -869,7 +869,7 @@ class Dashboard(FloatLayout):
         self.add_widget(self.civic_player)
         self.add_widget(
             fixed_label(
-                "[b]HONDA CIVIC EG9  //  [color=ff1c2b]B16A2[/color][/b]",
+                "[b]HONDA CIVIC EK9  //  [color=ff1c2b]B16A2[/color][/b]",
                 (panel.x + dp(10 if self.compact_mode else 15), panel.y + dp(3)),
                 (
                     panel.width - dp(20 if self.compact_mode else 30),

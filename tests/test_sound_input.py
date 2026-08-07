@@ -177,6 +177,31 @@ class FakeStream:
         self.closed = True
 
 
+class ActiveStateTrapStream:
+    """Fail if dashboard health checks cross into PortAudio state."""
+
+    def __init__(self, **kwargs):
+        self.callback = kwargs["callback"]
+        self.sample_rate = kwargs["samplerate"]
+        self.aborted = False
+        self.closed = False
+
+    @property
+    def active(self):
+        raise AssertionError("PortAudio active state must not be queried")
+
+    def start(self):
+        timeline = np.arange(4096, dtype=np.float32) / self.sample_rate
+        signal = 0.8 * np.sin(2.0 * math.pi * 440.0 * timeline)
+        self.callback(signal.reshape(-1, 1), len(signal), None, None)
+
+    def abort(self):
+        self.aborted = True
+
+    def close(self):
+        self.closed = True
+
+
 class UsbInputTest(unittest.TestCase):
     def test_auto_selection_prefers_usb_microphone(self):
         index, device = select_input_device(FakeSoundDevice())
@@ -214,7 +239,10 @@ class UsbInputTest(unittest.TestCase):
             self.assertEqual(microphone.device_name, "USB PnP Sound Device")
             self.assertEqual(len(microphone.bar_targets(17)), 17)
             self.assertGreater(max(microphone.bar_targets(17)), 0.5)
-            self.assertEqual(microphone._stream.options["blocksize"], 0)
+            self.assertEqual(
+                microphone._stream.options["blocksize"],
+                DEFAULT_BLOCK_SIZE,
+            )
             self.assertEqual(
                 microphone._stream.options["latency"],
                 "high",
@@ -250,8 +278,20 @@ class UsbInputTest(unittest.TestCase):
         finally:
             microphone.close()
 
-        self.assertEqual(DEFAULT_BLOCK_SIZE, 0)
+        self.assertEqual(DEFAULT_BLOCK_SIZE, 2048)
         self.assertEqual(DEFAULT_AUDIO_LATENCY, "high")
+
+    def test_live_health_check_never_queries_portaudio_active_state(self):
+        microphone = UsbAudioInput(
+            settings={"mode": "usb", "sensitivity": 1.8},
+            sounddevice_module=FakeSoundDevice(),
+            stream_factory=ActiveStateTrapStream,
+        )
+        try:
+            self.assertTrue(microphone.is_live)
+            self.assertEqual(microphone.status_text, "USB MIC // LIVE")
+        finally:
+            microphone.close()
 
 
 class ControlledProvider:
@@ -322,7 +362,7 @@ class ResilientSoundInputTest(unittest.TestCase):
         try:
             self.assertFalse(manager.attempt_reconnect())
             self.assertFalse(manager.is_live)
-            self.assertEqual(manager.status_text, "MIC RECONNECTING")
+            self.assertEqual(manager.status_text, "USB MIC // RETRY")
             self.assertEqual(manager.bar_targets(17), [0.04] * 17)
             self.assertEqual(manager.error, "device busy")
         finally:
