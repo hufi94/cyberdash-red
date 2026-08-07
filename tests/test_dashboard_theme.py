@@ -99,10 +99,10 @@ class DashboardColourTest(unittest.TestCase):
         self.assertIn("PILImage.Resampling.LANCZOS", source)
         self.assertIn('texture.mag_filter = "linear"', source)
         self.assertIn("visualizer_row_color", source)
-        self.assertIn("create_sound_input", source)
+        self.assertIn("create_resilient_sound_input", source)
         self.assertIn("self.sound_input.bar_targets", source)
         self.assertIn("sound_input=self.sound_input", source)
-        self.assertIn("retry_sound_input", source)
+        self.assertNotIn("retry_sound_input", source)
         self.assertIn("HONDA CIVIC EG9", source)
         self.assertNotIn("self.background_lines", source)
 

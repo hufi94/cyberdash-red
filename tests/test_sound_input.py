@@ -3,16 +3,21 @@ import math
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 import numpy as np
 
 from sound_input import (
+    DEFAULT_AUDIO_LATENCY,
+    DEFAULT_BLOCK_SIZE,
+    DEFAULT_CALLBACK_TIMEOUT_SECONDS,
     DEFAULT_GPIO_NAME,
     DEFAULT_SOUND_INPUT_MODE,
     BeatEnvelope,
     DigitalSoundInput,
+    ResilientSoundInput,
     SimulatedSoundInput,
     UsbAudioInput,
     create_sound_input,
@@ -148,8 +153,11 @@ class NoUsbSoundDevice:
 
 class FakeStream:
     def __init__(self, **kwargs):
+        self.options = kwargs
         self.callback = kwargs["callback"]
         self.sample_rate = kwargs["samplerate"]
+        self.active = True
+        self.aborted = False
         self.stopped = False
         self.closed = False
 
@@ -160,6 +168,10 @@ class FakeStream:
 
     def stop(self):
         self.stopped = True
+
+    def abort(self):
+        self.aborted = True
+        self.active = False
 
     def close(self):
         self.closed = True
@@ -191,13 +203,130 @@ class UsbInputTest(unittest.TestCase):
             stream_factory=FakeStream,
         )
         try:
+            deadline = time.monotonic() + 1.0
+            while (
+                max(microphone.bar_targets(17)) <= 0.5
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
             self.assertTrue(microphone.is_live)
             self.assertEqual(microphone.status_text, "USB MIC // LIVE")
             self.assertEqual(microphone.device_name, "USB PnP Sound Device")
             self.assertEqual(len(microphone.bar_targets(17)), 17)
             self.assertGreater(max(microphone.bar_targets(17)), 0.5)
+            self.assertEqual(microphone._stream.options["blocksize"], 0)
+            self.assertEqual(
+                microphone._stream.options["latency"],
+                "high",
+            )
         finally:
             microphone.close()
+
+        self.assertTrue(microphone._stream is None)
+        self.assertIsNone(microphone._processing_thread)
+
+    def test_callback_timeout_tolerates_a_busy_dashboard(self):
+        microphone = UsbAudioInput(
+            settings={"mode": "usb", "sensitivity": 1.8},
+            sounddevice_module=FakeSoundDevice(),
+            stream_factory=FakeStream,
+        )
+        try:
+            callback_time = microphone._last_callback_time
+            with patch(
+                "sound_input.time.monotonic",
+                return_value=(
+                    callback_time + DEFAULT_CALLBACK_TIMEOUT_SECONDS - 0.1
+                ),
+            ):
+                self.assertTrue(microphone.is_live)
+            with patch(
+                "sound_input.time.monotonic",
+                return_value=(
+                    callback_time + DEFAULT_CALLBACK_TIMEOUT_SECONDS + 0.1
+                ),
+            ):
+                self.assertFalse(microphone.is_live)
+        finally:
+            microphone.close()
+
+        self.assertEqual(DEFAULT_BLOCK_SIZE, 0)
+        self.assertEqual(DEFAULT_AUDIO_LATENCY, "high")
+
+
+class ControlledProvider:
+    def __init__(self, name, events, live=True, error=None):
+        self.name = name
+        self.events = events
+        self.is_live = live
+        self.error = error
+
+    @property
+    def status_text(self):
+        return f"{self.name} LIVE" if self.is_live else "SIMULATED INPUT"
+
+    def bar_targets(self, bar_count, phase=0.0):
+        return [0.5] * bar_count
+
+    def close(self):
+        self.events.append(f"close:{self.name}")
+        self.is_live = False
+
+
+class ResilientSoundInputTest(unittest.TestCase):
+    def test_dead_stream_is_closed_before_replacement_is_opened(self):
+        events = []
+        providers = [
+            ControlledProvider("first", events),
+            ControlledProvider("second", events),
+        ]
+
+        def factory():
+            provider = providers.pop(0)
+            events.append(f"create:{provider.name}")
+            return provider
+
+        manager = ResilientSoundInput(
+            settings={"mode": "usb"},
+            provider_factory=factory,
+            start_worker=False,
+        )
+        try:
+            self.assertTrue(manager.attempt_reconnect())
+            self.assertEqual(manager.status_text, "first LIVE")
+            self.assertEqual(manager.bar_targets(17), [0.5] * 17)
+
+            manager._provider_snapshot().is_live = False
+            self.assertTrue(manager.attempt_reconnect())
+            self.assertEqual(manager.status_text, "second LIVE")
+            self.assertLess(
+                events.index("close:first"),
+                events.index("create:second"),
+            )
+        finally:
+            manager.close()
+
+    def test_unavailable_device_reports_reconnecting_without_blocking(self):
+        events = []
+        unavailable = ControlledProvider(
+            "missing",
+            events,
+            live=False,
+            error="device busy",
+        )
+        manager = ResilientSoundInput(
+            settings={"mode": "usb"},
+            provider_factory=lambda: unavailable,
+            start_worker=False,
+        )
+        try:
+            self.assertFalse(manager.attempt_reconnect())
+            self.assertFalse(manager.is_live)
+            self.assertEqual(manager.status_text, "MIC RECONNECTING")
+            self.assertEqual(manager.bar_targets(17), [0.04] * 17)
+            self.assertEqual(manager.error, "device busy")
+        finally:
+            manager.close()
 
 
 class SoundInputModeTest(unittest.TestCase):

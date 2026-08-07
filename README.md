@@ -179,10 +179,12 @@ python dashboard_v2.py
 ```
 
 Its visualizer header displays `USB MIC // LIVE` when audio is active. If the
-microphone is unplugged or unavailable, it displays `SIMULATED INPUT` and the
-approved simulated animation continues instead of stopping the dashboard. The
-dashboard checks again every five seconds, so a microphone connected shortly
-after startup is picked up automatically.
+microphone is unplugged, stalls or becomes unavailable, it displays
+`MIC RECONNECTING` and the approved simulated animation continues instead of
+stopping the dashboard. Microphone recovery runs in a background thread, so it
+cannot pause the Civic animation, sensor readings or clock. The old audio stream
+is closed before the dashboard tries to reconnect, and a microphone connected
+shortly after startup is picked up automatically.
 
 ### Adjust and save sensitivity
 

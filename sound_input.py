@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import queue
 import threading
 import time
 
@@ -22,7 +23,15 @@ DEFAULT_SAMPLE_INTERVAL = 0.002
 DEFAULT_ACTIVE_LOW = True
 DEFAULT_SOUND_INPUT_MODE = "usb"
 DEFAULT_BAR_COUNT = 17
-DEFAULT_BLOCK_SIZE = 1024
+# Let PortAudio choose the native ALSA buffer size. A forced small buffer and
+# low-latency mode were reliable on a desktop, but could starve after several
+# seconds while the Pi was also decoding Civic textures and drawing Kivy.
+DEFAULT_BLOCK_SIZE = 0
+DEFAULT_AUDIO_LATENCY = "high"
+DEFAULT_CALLBACK_TIMEOUT_SECONDS = 8.0
+DEFAULT_RECONNECT_INTERVAL_SECONDS = 3.0
+DEFAULT_MONITOR_INTERVAL_SECONDS = 0.5
+DEFAULT_AUDIO_QUEUE_DEPTH = 3
 DEFAULT_AUDIO_SETTINGS = {
     "mode": DEFAULT_SOUND_INPUT_MODE,
     "device": "",
@@ -348,6 +357,7 @@ class UsbAudioInput:
         settings=None,
         sounddevice_module=None,
         stream_factory=None,
+        callback_timeout_seconds=DEFAULT_CALLBACK_TIMEOUT_SECONDS,
     ):
         self.settings = load_audio_settings_from_mapping(
             settings or load_audio_settings()
@@ -355,6 +365,9 @@ class UsbAudioInput:
         self.bar_count = int(bar_count)
         self._values = np.full(self.bar_count, 0.04, dtype=np.float32)
         self._values_lock = threading.Lock()
+        self._audio_blocks = queue.Queue(maxsize=DEFAULT_AUDIO_QUEUE_DEPTH)
+        self._processing_stop = threading.Event()
+        self._processing_thread = None
         self._stream = None
         self._is_live = False
         self._last_callback_time = None
@@ -363,6 +376,10 @@ class UsbAudioInput:
         self.device_index = None
         self.device_name = ""
         self.sample_rate = 0.0
+        self.callback_timeout_seconds = max(
+            2.5,
+            float(callback_timeout_seconds),
+        )
 
         try:
             if sounddevice_module is None:
@@ -381,9 +398,15 @@ class UsbAudioInput:
                 samplerate=self.sample_rate,
                 blocksize=DEFAULT_BLOCK_SIZE,
                 dtype="float32",
-                latency="low",
+                latency=DEFAULT_AUDIO_LATENCY,
                 callback=self._audio_callback,
             )
+            self._processing_thread = threading.Thread(
+                target=self._processing_loop,
+                name="cyberdash-audio-spectrum",
+                daemon=True,
+            )
+            self._processing_thread.start()
             self._stream.start()
             self._is_live = True
             self._last_callback_time = time.monotonic()
@@ -400,7 +423,13 @@ class UsbAudioInput:
     def is_live(self):
         if not self._is_live or self._last_callback_time is None:
             return False
-        return time.monotonic() - self._last_callback_time < 2.5
+        stream_active = getattr(self._stream, "active", None)
+        if stream_active is False:
+            return False
+        return (
+            time.monotonic() - self._last_callback_time
+            < self.callback_timeout_seconds
+        )
 
     @property
     def status_text(self):
@@ -421,37 +450,229 @@ class UsbAudioInput:
         return np.interp(target_positions, source_positions, values).tolist()
 
     def _audio_callback(self, indata, _frames, _time_info, status):
+        """Copy one block quickly; FFT work belongs on the worker thread."""
+
         try:
             self._last_callback_time = time.monotonic()
             if status:
                 self.last_stream_status = str(status)
-            values = fft_band_levels(
-                indata,
-                self.sample_rate,
-                self.bar_count,
-                self.settings["sensitivity"],
-                self.settings["noise_gate"],
-                self.settings["minimum_frequency"],
-                self.settings["maximum_frequency"],
-            )
-            with self._values_lock:
-                self._values = values
+            block = np.array(indata, dtype=np.float32, copy=True)
+            try:
+                self._audio_blocks.put_nowait(block)
+            except queue.Full:
+                # Keeping the newest samples matters more than processing a
+                # backlog, and dropping here prevents callback overruns.
+                try:
+                    self._audio_blocks.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self._audio_blocks.put_nowait(block)
+                except queue.Full:
+                    pass
         except Exception as error:
             self.error = str(error)
+
+    def _processing_loop(self):
+        while not self._processing_stop.is_set():
+            try:
+                samples = self._audio_blocks.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            try:
+                values = fft_band_levels(
+                    samples,
+                    self.sample_rate,
+                    self.bar_count,
+                    self.settings["sensitivity"],
+                    self.settings["noise_gate"],
+                    self.settings["minimum_frequency"],
+                    self.settings["maximum_frequency"],
+                )
+                with self._values_lock:
+                    self._values = values
+            except Exception as error:
+                self.error = str(error)
 
     def close(self):
         stream = self._stream
         self._stream = None
         self._is_live = False
+        self._processing_stop.set()
         if stream is not None:
             try:
-                stream.stop()
+                abort = getattr(stream, "abort", None)
+                if abort is not None:
+                    abort()
+                else:
+                    stream.stop()
             except Exception:
                 pass
             try:
                 stream.close()
             except Exception:
                 pass
+        processing_thread = self._processing_thread
+        if (
+            processing_thread is not None
+            and processing_thread.is_alive()
+            and processing_thread is not threading.current_thread()
+        ):
+            processing_thread.join(timeout=0.5)
+        self._processing_thread = None
+
+
+class ResilientSoundInput:
+    """Keep audio recovery off Kivy's UI thread.
+
+    The manager exposes the same small interface as the concrete providers.
+    When a USB callback stalls, it first closes the stale stream and only then
+    opens a replacement on a daemon thread. The visualizer can keep drawing a
+    simulation without any PortAudio operation blocking Civic rotation.
+    """
+
+    def __init__(
+        self,
+        bar_count=DEFAULT_BAR_COUNT,
+        settings=None,
+        retry_interval=DEFAULT_RECONNECT_INTERVAL_SECONDS,
+        monitor_interval=DEFAULT_MONITOR_INTERVAL_SECONDS,
+        provider_factory=None,
+        start_worker=True,
+    ):
+        self.bar_count = int(bar_count)
+        self.settings = load_audio_settings_from_mapping(
+            settings or load_audio_settings()
+        )
+        self.retry_interval = max(0.05, float(retry_interval))
+        self.monitor_interval = max(0.05, float(monitor_interval))
+        self._provider_factory = provider_factory
+        self._provider_lock = threading.Lock()
+        self._reconnect_lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._provider = SimulatedSoundInput(error="audio starting")
+        self.error = None
+        self._last_logged_error = None
+
+        if self.settings["mode"] == "simulate":
+            self._provider = SimulatedSoundInput()
+        elif start_worker:
+            self._thread = threading.Thread(
+                target=self._recovery_loop,
+                name="cyberdash-audio-recovery",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def _provider_snapshot(self):
+        with self._provider_lock:
+            return self._provider
+
+    def _swap_provider(self, provider):
+        with self._provider_lock:
+            previous = self._provider
+            self._provider = provider
+        return previous
+
+    def _create_provider(self):
+        if self._provider_factory is not None:
+            return self._provider_factory()
+        return create_sound_input(
+            bar_count=self.bar_count,
+            settings=self.settings,
+            log_errors=False,
+        )
+
+    @property
+    def is_live(self):
+        return bool(self._provider_snapshot().is_live)
+
+    @property
+    def status_text(self):
+        provider = self._provider_snapshot()
+        if provider.is_live:
+            return provider.status_text
+        if self.settings["mode"] == "simulate":
+            return "SIMULATED INPUT"
+        return "MIC RECONNECTING"
+
+    def bar_targets(self, bar_count, phase=0.0):
+        provider = self._provider_snapshot()
+        if not provider.is_live:
+            return [0.04] * int(bar_count)
+        try:
+            return provider.bar_targets(bar_count, phase)
+        except Exception as error:
+            self.error = str(error)
+            return [0.04] * int(bar_count)
+
+    def attempt_reconnect(self):
+        """Close a dead provider, then make one replacement attempt."""
+
+        if self._stop_event.is_set() or self.settings["mode"] == "simulate":
+            return False
+        with self._reconnect_lock:
+            current = self._provider_snapshot()
+            if current.is_live:
+                return True
+
+            fallback = SimulatedSoundInput(
+                error=getattr(current, "error", None),
+            )
+            previous = self._swap_provider(fallback)
+            previous.close()
+
+            candidate = self._create_provider()
+            if candidate.is_live:
+                old_fallback = self._swap_provider(candidate)
+                old_fallback.close()
+                self.error = None
+                self._last_logged_error = None
+                return True
+
+            self.error = getattr(candidate, "error", None) or (
+                f"{self.settings['mode']} input did not start"
+            )
+            candidate.close()
+            fallback.error = self.error
+            if self.error != self._last_logged_error:
+                print(f"Audio reconnect waiting: {self.error}")
+                self._last_logged_error = self.error
+            return False
+
+    def _recovery_loop(self):
+        while not self._stop_event.is_set():
+            if self.is_live:
+                self._stop_event.wait(self.monitor_interval)
+                continue
+            self.attempt_reconnect()
+            if not self.is_live:
+                self._stop_event.wait(self.retry_interval)
+
+    def close(self):
+        self._stop_event.set()
+        thread = self._thread
+        if (
+            thread is not None
+            and thread.is_alive()
+            and thread is not threading.current_thread()
+        ):
+            thread.join(timeout=1.0)
+        provider = self._swap_provider(SimulatedSoundInput(error="closed"))
+        provider.close()
+
+
+def create_resilient_sound_input(
+    bar_count=DEFAULT_BAR_COUNT,
+    settings=None,
+):
+    """Create the background-managed sound input used by the dashboard."""
+
+    return ResilientSoundInput(
+        bar_count=bar_count,
+        settings=settings,
+    )
 
 
 class DigitalSoundInput:

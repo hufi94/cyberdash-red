@@ -76,7 +76,7 @@ from display_layout import (
     design_width_for_window,
     fit_design_to_window,
 )
-from sound_input import create_sound_input
+from sound_input import create_resilient_sound_input
 from startup_loader import DashboardWithStartupLoader
 
 
@@ -528,7 +528,9 @@ class Dashboard(FloatLayout):
         self.inside_sensor = None
         self.outside_sensor = None
         self.sensor_status = "CONNECTING"
-        self.sound_input = create_sound_input(bar_count=17)
+        # PortAudio discovery and recovery run on a worker thread so a USB
+        # dropout can never pause Kivy or the Civic animation.
+        self.sound_input = create_resilient_sound_input(bar_count=17)
 
         self.create_background()
         self.create_panels()
@@ -541,7 +543,6 @@ class Dashboard(FloatLayout):
         Clock.schedule_interval(self.update_clock, 0.25)
         Clock.schedule_interval(self.update_sensors, 2.0)
         Clock.schedule_interval(self.update_sound_status, 1.0)
-        Clock.schedule_interval(self.retry_sound_input, 5.0)
         self.update_clock(0)
         self.update_sensors(0)
 
@@ -912,19 +913,6 @@ class Dashboard(FloatLayout):
 
     def update_sound_status(self, _dt):
         self.audio_status_label.text = self.sound_input.status_text
-
-    def retry_sound_input(self, _dt):
-        if self.sound_input.is_live:
-            return
-        candidate = create_sound_input(bar_count=17, log_errors=False)
-        if not candidate.is_live:
-            candidate.close()
-            return
-        previous = self.sound_input
-        self.sound_input = candidate
-        self.visualizer.sound_input = candidate
-        previous.close()
-        self.audio_status_label.text = candidate.status_text
 
     def connect_sensors(self):
         try:
