@@ -87,6 +87,8 @@ LIGHT_GREY = (0.65, 0.65, 0.70, 1)
 RED = (0.92, 0.025, 0.045, 1)
 BORDER_GREY = (0.30, 0.30, 0.33, 1)
 INACTIVE_RED = (0.12, 0.012, 0.022, 1)
+LIVE_VISUALIZER_ATTACK = 0.75
+LIVE_VISUALIZER_RELEASE = 0.18
 
 # Set this as soon as the Window exists so the initial buffer is black instead
 # of briefly flashing white while the dashboard and Civic textures load.
@@ -382,7 +384,11 @@ class Visualizer(Widget):
             current = self.bar_values[index]
             target = self.target_values[index]
             if live_input:
-                factor = 0.46 if target > current else 0.14
+                factor = (
+                    LIVE_VISUALIZER_ATTACK
+                    if target > current
+                    else LIVE_VISUALIZER_RELEASE
+                )
             else:
                 factor = 0.32 if target > current else 0.11
             self.bar_values[index] = current + (target - current) * factor
