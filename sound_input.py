@@ -23,15 +23,15 @@ DEFAULT_SAMPLE_INTERVAL = 0.002
 DEFAULT_ACTIVE_LOW = True
 DEFAULT_SOUND_INPUT_MODE = "usb"
 DEFAULT_BAR_COUNT = 17
-# Let PortAudio choose the native ALSA buffer size. A forced small buffer and
-# low-latency mode were reliable on a desktop, but could starve after several
-# seconds while the Pi was also decoding Civic textures and drawing Kivy.
-DEFAULT_BLOCK_SIZE = 0
+# About 43-46 ms of mono audio at the common 44.1/48 kHz microphone rates.
+# This caps FFT work near 22 updates per second and gives ALSA enough headroom
+# while Kivy is drawing the dashboard and swapping Civic textures.
+DEFAULT_BLOCK_SIZE = 2048
 DEFAULT_AUDIO_LATENCY = "high"
 DEFAULT_CALLBACK_TIMEOUT_SECONDS = 8.0
 DEFAULT_RECONNECT_INTERVAL_SECONDS = 3.0
 DEFAULT_MONITOR_INTERVAL_SECONDS = 0.5
-DEFAULT_AUDIO_QUEUE_DEPTH = 3
+DEFAULT_AUDIO_QUEUE_DEPTH = 2
 DEFAULT_AUDIO_SETTINGS = {
     "mode": DEFAULT_SOUND_INPUT_MODE,
     "device": "",
@@ -423,9 +423,9 @@ class UsbAudioInput:
     def is_live(self):
         if not self._is_live or self._last_callback_time is None:
             return False
-        stream_active = getattr(self._stream, "active", None)
-        if stream_active is False:
-            return False
+        # Do not call PortAudio here. Kivy reads this property every animation
+        # frame; asking a wedged native stream for ``active`` can block the UI.
+        # The callback heartbeat is sufficient and remains a pure Python read.
         return (
             time.monotonic() - self._last_callback_time
             < self.callback_timeout_seconds
@@ -595,7 +595,7 @@ class ResilientSoundInput:
             return provider.status_text
         if self.settings["mode"] == "simulate":
             return "SIMULATED INPUT"
-        return "MIC RECONNECTING"
+        return "USB MIC // RETRY"
 
     def bar_targets(self, bar_count, phase=0.0):
         provider = self._provider_snapshot()

@@ -12,7 +12,7 @@ any car frames.
 - large time and date module with a technical divider
 - inside/outside climate rows with anti-aliased white/red thermometer icons and
   red segmented gauges
-- rotating Civic module labelled `HONDA CIVIC EG9 // B16A2` with `360 LIVE`
+- rotating Civic module labelled `HONDA CIVIC EK9 // B16A2` with `360 LIVE`
 - real 17-band USB microphone spectrum visualizer, with a safe simulated
   fallback when the microphone is disconnected
 - solid red baseline segments that progress through coral and pale red to
@@ -180,7 +180,7 @@ python dashboard_v2.py
 
 Its visualizer header displays `USB MIC // LIVE` when audio is active. If the
 microphone is unplugged, stalls or becomes unavailable, it displays
-`MIC RECONNECTING` and the approved simulated animation continues instead of
+`USB MIC // RETRY` and the approved simulated animation continues instead of
 stopping the dashboard. Microphone recovery runs in a background thread, so it
 cannot pause the Civic animation, sensor readings or clock. The old audio stream
 is closed before the dashboard tries to reconnect, and a microphone connected
